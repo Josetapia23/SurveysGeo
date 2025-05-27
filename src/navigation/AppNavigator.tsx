@@ -7,10 +7,10 @@ import { RootStackParamList, UserContextType } from './types';
 // Importar pantallas
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
-//import ClientListScreen from '../screens/ClientListScreen';
-//import MapScreen from '../screens/MapScreen';
-//import SurveyScreen from '../screens/SurveyScreen';
-//import DashboardScreen from '../screens/DashboardScreen';
+import ClientListScreen from '../screens/ClientListScreen';
+import { MapScreen } from '../screens/MapScreen';
+import { SurveyScreen } from '../screens/SurveyScreen';
+import { DashboardScreen } from '../screens/DashboardScreen';
 
 // Crear Stack Navigator
 const Stack = createStackNavigator<RootStackParamList>();
@@ -72,7 +72,7 @@ const AuthenticatedNavigator: React.FC = () => {
                     headerLeft: () => null, // Ocultar botón atrás
                 }}
             />
-            {/* <Stack.Screen
+            <Stack.Screen
                 name="ClientList"
                 component={ClientListScreen}
                 options={{
@@ -99,7 +99,7 @@ const AuthenticatedNavigator: React.FC = () => {
                 options={{
                     title: 'Mi Dashboard',
                 }}
-            />  */}
+            /> 
         </Stack.Navigator>
     );
 };

@@ -57,13 +57,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             icon: '📝',
             screen: 'Survey'
         },
-        // {
-        //     id: 'dashboard',
-        //     title: 'Mi Dashboard',
-        //     subtitle: 'Ver progreso y estadísticas',
-        //     icon: '📊',
-        //     screen: 'Dashboard'
-        // }
+        {
+            id: 'dashboard',
+            title: 'Mi Dashboard',
+            subtitle: 'Ver progreso y estadísticas',
+            icon: '📊',
+            screen: 'Dashboard'
+        }
     ];
 
     // Datos mock - después vendrán de Firebase
