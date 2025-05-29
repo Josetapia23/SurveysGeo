@@ -12,7 +12,7 @@ import {
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Client } from '../../App';
 import { RootStackParamList } from '../navigation/types';
-import { useUser } from '../navigation/AppNavigator';
+import { useUser } from '../context/UserContext';
 
 // Tipos para navegación
 type ClientListScreenNavigationProp = StackNavigationProp<RootStackParamList, 'ClientList'>;

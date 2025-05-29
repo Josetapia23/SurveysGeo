@@ -13,7 +13,7 @@ import {
 import { StackNavigationProp } from '@react-navigation/stack';
 import { User } from '../../App';
 import { RootStackParamList } from '../navigation/types';
-import { useUser } from '../navigation/AppNavigator';
+import { useUser } from '../context/UserContext';
 
 // Tipos para navegación
 type LoginScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Login'>;

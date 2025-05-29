@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../navigation/types';
-import { useUser } from '../navigation/AppNavigator';
+import { useUser } from '../context/UserContext';
 
 // Tipos para navegación
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
