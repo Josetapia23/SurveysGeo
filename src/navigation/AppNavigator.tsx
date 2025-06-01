@@ -8,7 +8,7 @@ import { useUser, UserProvider } from '../context/UserContext';
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import ClientListScreen from '../screens/ClientListScreen';
-import { MapScreen } from '../screens/MapScreen';
+import MapScreen from '../screens/MapScreen';
 import SurveyScreen from '../screens/SurveyScreen';
 import { DashboardScreen } from '../screens/DashboardScreen';
 
