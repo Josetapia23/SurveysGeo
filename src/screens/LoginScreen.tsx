@@ -22,39 +22,31 @@ interface LoginScreenProps {
     navigation: LoginScreenNavigationProp;
 }
 
-interface MockUser {
-    id: string;
-    email: string;
-    password: string;
-    name: string;
-    role: 'gestor';
+// Tipos para la respuesta de la API
+interface LoginResponse {
+    success: boolean;
+    data?: {
+        gestor_id: string;
+        nombre: string;
+        apellido: string;
+        email: string;
+        cedula?: string;
+        telefono?: string;
+    };
+    message?: string;
 }
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
-    const [email, setEmail] = useState<string>('');
-    const [password, setPassword] = useState<string>('');
+    const [email, setEmail] = useState<string>('juan.perez@surveysgeo.com');
+    const [password, setPassword] = useState<string>('123456');
     const [loading, setLoading] = useState<boolean>(false);
 
     // Usar contexto de usuario
     const { login } = useUser();
 
-    // Datos de prueba de gestores (después vendrán de Firebase)
-    const mockUsers: MockUser[] = [
-        {
-            id: 'gestor1',
-            email: 'juan@company.com',
-            password: '123456',
-            name: 'Juan Pérez',
-            role: 'gestor'
-        },
-        {
-            id: 'gestor2',
-            email: 'maria@company.com',
-            password: '123456',
-            name: 'María García',
-            role: 'gestor'
-        }
-    ];
+    // ⚙️ CONFIGURACIÓN DE LA API
+    // URL exacta de PHPRunner
+    const API_BASE_URL = 'http://192.168.2.117/Surveysgeo/output';
 
     const handleLogin = async (): Promise<void> => {
         if (!email.trim() || !password.trim()) {
@@ -64,37 +56,94 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
 
         setLoading(true);
 
-        // Simular delay de autenticación
-        setTimeout(() => {
-            const user = mockUsers.find(
-                u => u.email === email.toLowerCase().trim() && u.password === password
-            );
+        try {
+            // Llamar a la API de PHPRunner
+            const response = await fetch(`${API_BASE_URL}/login.php?page=login`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: new URLSearchParams({
+                    btnSubmit: 'Login',
+                    username: email,
+                    password: password,
+                }).toString()
+            });
 
-            if (user) {
-                // Login exitoso - convertir MockUser a User
-                const userData: User = {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    role: user.role
-                };
+            console.log('Status:', response.status);
+            console.log('Response Headers:', response.headers);
 
-                // Usar contexto para login (automáticamente navega a Home)
-                login(userData);
+            if (response.ok) {
+                // Si el login es exitoso, PHPRunner redirecciona
+                // Verificamos si nos redirigió a una página diferente
+                const finalUrl = response.url;
+                console.log('Final URL:', finalUrl);
+
+                if (finalUrl.includes('menu.php') || finalUrl.includes('main') || finalUrl.includes('dashboard') || !finalUrl.includes('login')) {
+                    // Login exitoso - crear usuario con datos del gestor real
+                    const userData: User = {
+                        id: '1', // ID del gestor Juan Carlos
+                        email: email,
+                        name: email.includes('juan') ? 'Juan Carlos Pérez' : 'María Fernanda García',
+                        role: 'gestor'
+                    };
+
+                    login(userData);
+                    Alert.alert('Éxito', 'Login exitoso con PHPRunner');
+                } else {
+                    // Login fallido
+                    Alert.alert('Error', 'Credenciales incorrectas');
+                }
             } else {
-                Alert.alert('Error', 'Credenciales incorrectas');
+                Alert.alert('Error', `Error del servidor: ${response.status}`);
             }
 
+        } catch (error) {
+            console.error('Error de conexión:', error);
+            Alert.alert(
+                'Error de Conexión',
+                'No se pudo conectar al servidor. Verifica:\n' +
+                '• Que PHPRunner esté ejecutándose\n' +
+                '• La dirección IP sea correcta\n' +
+                '• Ambos dispositivos estén en la misma red'
+            );
+        } finally {
             setLoading(false);
-        }, 1000);
+        }
+    };
+
+    // Función auxiliar para extraer nombre del email
+    const extractNameFromEmail = (email: string): string => {
+        const name = email.split('@')[0];
+        return name.charAt(0).toUpperCase() + name.slice(1).replace('.', ' ');
     };
 
     const handleForgotPassword = (): void => {
         Alert.alert(
             'Recuperar Contraseña',
-            'Funcionalidad de recuperación de contraseña (próximamente con Firebase Auth)',
+            'Contacta al administrador para recuperar tu contraseña',
             [{ text: 'OK' }]
         );
+    };
+
+    // Función para probar conexión
+    const testConnection = async (): Promise<void> => {
+        setLoading(true);
+        try {
+            const response = await fetch(`${API_BASE_URL}/login.php?page=login`, {
+                method: 'GET'
+            });
+
+            if (response.ok) {
+                Alert.alert('Conexión OK', 'Se puede conectar al servidor PHPRunner');
+            } else {
+                Alert.alert('Error', `Servidor responde con error: ${response.status}`);
+            }
+        } catch (error) {
+            Alert.alert('Error', 'No se puede conectar al servidor');
+        } finally {
+            setLoading(false);
+        }
     };
 
     return (
@@ -108,7 +157,20 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                     <View style={styles.header}>
                         <Text style={styles.title}>SurveysGeo</Text>
                         <Text style={styles.subtitle}>Control de Visitas</Text>
-                        <Text style={styles.description}>Ingresa a tu cuenta</Text>
+                        <Text style={styles.description}>Conectado a PHPRunner</Text>
+                    </View>
+
+                    {/* Configuración de red */}
+                    <View style={styles.networkInfo}>
+                        <Text style={styles.networkTitle}>Servidor:</Text>
+                        <Text style={styles.networkUrl}>{API_BASE_URL}</Text>
+                        <TouchableOpacity
+                            style={styles.testButton}
+                            onPress={testConnection}
+                            disabled={loading}
+                        >
+                            <Text style={styles.testButtonText}>Probar Conexión</Text>
+                        </TouchableOpacity>
                     </View>
 
                     {/* Formulario */}
@@ -117,7 +179,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                             <Text style={styles.label}>Email</Text>
                             <TextInput
                                 style={styles.input}
-                                placeholder="ejemplo@company.com"
+                                placeholder="juan.perez@surveysgeo.com"
                                 value={email}
                                 onChangeText={setEmail}
                                 keyboardType="email-address"
@@ -155,16 +217,29 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                             disabled={loading}
                         >
                             <Text style={styles.loginButtonText}>
-                                {loading ? 'Ingresando...' : 'Ingresar'}
+                                {loading ? 'Conectando...' : 'Ingresar con PHPRunner'}
                             </Text>
                         </TouchableOpacity>
                     </View>
 
                     {/* Datos de prueba */}
                     <View style={styles.testData}>
-                        <Text style={styles.testDataTitle}>Datos de Prueba:</Text>
-                        <Text style={styles.testDataText}>juan@company.com - 123456</Text>
-                        <Text style={styles.testDataText}>maria@company.com - 123456</Text>
+                        <Text style={styles.testDataTitle}>Datos de PHPRunner:</Text>
+                        <Text style={styles.testDataText}>juan.perez@surveysgeo.com</Text>
+                        <Text style={styles.testDataText}>Password: 123456</Text>
+                        <Text style={styles.testDataSmall}>
+                            Hash BD: e10adc3949ba59abbe56e057f20f883e
+                        </Text>
+                    </View>
+
+                    {/* Instrucciones de red */}
+                    <View style={styles.instructions}>
+                        <Text style={styles.instructionsTitle}>💡 Configuración:</Text>
+                        <Text style={styles.instructionsText}>
+                            1. Cambia API_BASE_URL por la IP de tu PC{'\n'}
+                            2. Asegúrate que PHPRunner esté ejecutándose{'\n'}
+                            3. Ambos dispositivos en la misma red WiFi
+                        </Text>
                     </View>
                 </View>
             </KeyboardAvoidingView>
@@ -187,7 +262,7 @@ const styles = StyleSheet.create({
     },
     header: {
         alignItems: 'center',
-        marginBottom: 40,
+        marginBottom: 30,
     },
     title: {
         fontSize: 32,
@@ -203,10 +278,41 @@ const styles = StyleSheet.create({
     },
     description: {
         fontSize: 16,
-        color: '#7f8c8d',
+        color: '#27ae60',
+        fontWeight: '500',
+    },
+    networkInfo: {
+        backgroundColor: '#e8f4f8',
+        padding: 16,
+        borderRadius: 8,
+        marginBottom: 20,
+        alignItems: 'center',
+    },
+    networkTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#2c3e50',
+        marginBottom: 4,
+    },
+    networkUrl: {
+        fontSize: 12,
+        color: '#3498db',
+        fontFamily: 'monospace',
+        marginBottom: 8,
+    },
+    testButton: {
+        backgroundColor: '#3498db',
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 12,
+    },
+    testButtonText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '600',
     },
     form: {
-        marginBottom: 30,
+        marginBottom: 20,
     },
     inputContainer: {
         marginBottom: 20,
@@ -235,7 +341,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     loginButton: {
-        backgroundColor: '#3498db',
+        backgroundColor: '#27ae60',
         borderRadius: 8,
         paddingVertical: 14,
         alignItems: 'center',
@@ -250,9 +356,10 @@ const styles = StyleSheet.create({
     },
     testData: {
         padding: 16,
-        backgroundColor: '#e8f4f8',
+        backgroundColor: '#e8f5e8',
         borderRadius: 8,
         alignItems: 'center',
+        marginBottom: 16,
     },
     testDataTitle: {
         fontSize: 14,
@@ -262,8 +369,33 @@ const styles = StyleSheet.create({
     },
     testDataText: {
         fontSize: 12,
-        color: '#7f8c8d',
+        color: '#27ae60',
         marginBottom: 2,
+        fontWeight: '500',
+    },
+    testDataSmall: {
+        fontSize: 10,
+        color: '#7f8c8d',
+        fontFamily: 'monospace',
+        marginTop: 4,
+    },
+    instructions: {
+        padding: 16,
+        backgroundColor: '#fff3cd',
+        borderRadius: 8,
+        borderLeftWidth: 4,
+        borderLeftColor: '#f39c12',
+    },
+    instructionsTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#856404',
+        marginBottom: 8,
+    },
+    instructionsText: {
+        fontSize: 12,
+        color: '#856404',
+        lineHeight: 16,
     },
 });
 
