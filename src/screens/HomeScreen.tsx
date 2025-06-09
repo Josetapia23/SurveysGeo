@@ -5,7 +5,8 @@ import {
     TouchableOpacity,
     StyleSheet,
     SafeAreaView,
-    Alert
+    Alert,
+    Dimensions
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RootStackParamList } from '../navigation/types';
@@ -18,59 +19,54 @@ interface HomeScreenProps {
     navigation: HomeScreenNavigationProp;
 }
 
-interface MenuItem {
+interface Stat {
+    number: number;
+    label: string;
+    color: string;
+}
+
+interface MainAction {
     id: string;
     title: string;
     subtitle: string;
     icon: string;
-    screen: keyof RootStackParamList;
+    screen: 'ClientList' | 'Map';
+    color: string;
+    gradientColors: string[];
 }
 
-interface Stat {
-    number: number;
-    label: string;
-}
+const { width } = Dimensions.get('window');
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
     // Usar contexto de usuario
     const { user, logout } = useUser();
 
-    const menuItems: MenuItem[] = [
+    // Datos mock - después vendrán de Firebase
+    const stats: Stat[] = [
+        { number: 12, label: 'Clientes Asignados', color: '#3498db' },
+        { number: 8, label: 'Pendientes', color: '#f39c12' },
+        { number: 4, label: 'Completadas', color: '#27ae60' }
+    ];
+
+    const mainActions: MainAction[] = [
         {
             id: 'clients',
             title: 'Lista de Clientes',
-            subtitle: 'Ver clientes asignados',
+            subtitle: 'Ver y gestionar clientes asignados',
             icon: '👥',
-            screen: 'ClientList'
+            screen: 'ClientList',
+            color: '#3498db',
+            gradientColors: ['#3498db', '#2980b9']
         },
         {
             id: 'map',
             title: 'Mapa de Ubicaciones',
-            subtitle: 'Ubicar clientes en el mapa',
+            subtitle: 'Ubicar clientes y optimizar rutas',
             icon: '🗺️',
-            screen: 'Map'
-        },
-        {
-            id: 'survey',
-            title: 'Realizar Encuesta',
-            subtitle: 'Encuestar clientes visitados',
-            icon: '📝',
-            screen: 'Survey'
-        },
-        {
-            id: 'dashboard',
-            title: 'Mi Dashboard',
-            subtitle: 'Ver progreso y estadísticas',
-            icon: '📊',
-            screen: 'Dashboard'
+            screen: 'Map',
+            color: '#27ae60',
+            gradientColors: ['#27ae60', '#229954']
         }
-    ];
-
-    // Datos mock - después vendrán de Firebase
-    const stats: Stat[] = [
-        { number: 12, label: 'Clientes Asignados' },
-        { number: 8, label: 'Pendientes' },
-        { number: 4, label: 'Completadas' }
     ];
 
     const handleLogout = (): void => {
@@ -88,17 +84,8 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         );
     };
 
-    const handleMenuPress = (screen: keyof RootStackParamList): void => {
-        // Navegación tipada
-        if (screen === 'Survey') {
-            navigation.navigate('Survey', {});
-        } else if (screen === 'ClientList') {
-            navigation.navigate('ClientList');
-        } else if (screen === 'Map') {
-            navigation.navigate('Map');
-        } else if (screen === 'Dashboard') {
-            navigation.navigate('Dashboard');
-        }
+    const handleActionPress = (screen: 'ClientList' | 'Map'): void => {
+        navigation.navigate(screen);
     };
 
     // Si no hay usuario, no renderizar nada (no debería pasar)
@@ -108,57 +95,85 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header personalizado */}
+            {/* Header con información del usuario */}
             <View style={styles.header}>
-                <View>
-                    <Text style={styles.greeting}>¡Hola!</Text>
+                <View style={styles.welcomeSection}>
+                    <Text style={styles.welcomeText}>¡Hola!</Text>
                     <Text style={styles.userName}>{user.name}</Text>
+                    <Text style={styles.roleText}>Gestor de Encuestas</Text>
                 </View>
                 <TouchableOpacity
                     style={styles.logoutButton}
                     onPress={handleLogout}
                 >
-                    <Text style={styles.logoutText}>Salir</Text>
+                    <Text style={styles.logoutIcon}>👋</Text>
                 </TouchableOpacity>
             </View>
 
-            {/* Estadísticas rápidas */}
-            <View style={styles.statsContainer}>
-                {stats.map((stat, index) => (
-                    <View key={index} style={styles.statCard}>
-                        <Text style={styles.statNumber}>{stat.number}</Text>
-                        <Text style={styles.statLabel}>{stat.label}</Text>
-                    </View>
-                ))}
+            {/* Estadísticas del día */}
+            <View style={styles.statsSection}>
+                <Text style={styles.sectionTitle}>Resumen del día</Text>
+                <View style={styles.statsContainer}>
+                    {stats.map((stat, index) => (
+                        <View key={index} style={styles.statCard}>
+                            <Text style={[styles.statNumber, { color: stat.color }]}>
+                                {stat.number}
+                            </Text>
+                            <Text style={styles.statLabel}>{stat.label}</Text>
+                        </View>
+                    ))}
+                </View>
             </View>
 
-            {/* Menú principal */}
-            <View style={styles.menuContainer}>
-                <Text style={styles.menuTitle}>¿Qué quieres hacer hoy?</Text>
+            {/* Acciones principales */}
+            <View style={styles.actionsSection}>
+                <Text style={styles.sectionTitle}>¿Qué vas a hacer?</Text>
+                <Text style={styles.sectionSubtitle}>
+                    Selecciona una opción para comenzar tu trabajo
+                </Text>
 
-                {menuItems.map((item) => (
-                    <TouchableOpacity
-                        key={item.id}
-                        style={styles.menuItem}
-                        onPress={() => handleMenuPress(item.screen)}
-                    >
-                        <View style={styles.menuItemLeft}>
-                            <Text style={styles.menuIcon}>{item.icon}</Text>
-                            <View style={styles.menuText}>
-                                <Text style={styles.menuItemTitle}>{item.title}</Text>
-                                <Text style={styles.menuItemSubtitle}>{item.subtitle}</Text>
+                <View style={styles.actionsContainer}>
+                    {mainActions.map((action) => (
+                        <TouchableOpacity
+                            key={action.id}
+                            style={[styles.actionCard, { borderLeftColor: action.color }]}
+                            onPress={() => handleActionPress(action.screen)}
+                            activeOpacity={0.8}
+                        >
+                            <View style={styles.actionContent}>
+                                <View style={[styles.actionIcon, { backgroundColor: action.color }]}>
+                                    <Text style={styles.actionIconText}>{action.icon}</Text>
+                                </View>
+                                <View style={styles.actionText}>
+                                    <Text style={styles.actionTitle}>{action.title}</Text>
+                                    <Text style={styles.actionSubtitle}>{action.subtitle}</Text>
+                                </View>
+                                <View style={styles.actionArrow}>
+                                    <Text style={styles.arrowText}>›</Text>
+                                </View>
                             </View>
-                        </View>
-                        <Text style={styles.menuArrow}>›</Text>
-                    </TouchableOpacity>
-                ))}
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </View>
+
+            {/* Recordatorio útil */}
+            <View style={styles.reminderSection}>
+                <View style={styles.reminderCard}>
+                    <Text style={styles.reminderIcon}>💡</Text>
+                    <View style={styles.reminderText}>
+                        <Text style={styles.reminderTitle}>Consejo del día</Text>
+                        <Text style={styles.reminderSubtitle}>
+                            Usa el mapa para planificar tu ruta y visitar clientes cercanos primero
+                        </Text>
+                    </View>
+                </View>
             </View>
 
             {/* Footer */}
             <View style={styles.footer}>
-                <Text style={styles.footerText}>
-                    SurveysGeo v1.0
-                </Text>
+                <Text style={styles.footerText}>SurveysGeo v1.0</Text>
+                <Text style={styles.footerSubtext}>Trabajo de campo optimizado</Text>
             </View>
         </SafeAreaView>
     );
@@ -179,105 +194,165 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#e9ecef',
     },
-    greeting: {
+    welcomeSection: {
+        flex: 1,
+    },
+    welcomeText: {
         fontSize: 16,
         color: '#7f8c8d',
     },
     userName: {
-        fontSize: 20,
+        fontSize: 22,
         fontWeight: 'bold',
         color: '#2c3e50',
+        marginVertical: 2,
+    },
+    roleText: {
+        fontSize: 14,
+        color: '#3498db',
+        fontWeight: '500',
     },
     logoutButton: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        backgroundColor: '#e74c3c',
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#ecf0f1',
+        justifyContent: 'center',
+        alignItems: 'center',
     },
-    logoutText: {
-        color: '#fff',
-        fontSize: 14,
+    logoutIcon: {
+        fontSize: 20,
+    },
+    statsSection: {
+        paddingHorizontal: 24,
+        paddingVertical: 20,
+    },
+    sectionTitle: {
+        fontSize: 18,
         fontWeight: '600',
+        color: '#2c3e50',
+        marginBottom: 16,
+    },
+    sectionSubtitle: {
+        fontSize: 14,
+        color: '#7f8c8d',
+        marginBottom: 20,
+        lineHeight: 20,
     },
     statsContainer: {
         flexDirection: 'row',
-        paddingHorizontal: 24,
-        paddingVertical: 20,
         gap: 12,
     },
     statCard: {
         flex: 1,
         backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 16,
+        borderRadius: 16,
+        padding: 20,
         alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
+        shadowRadius: 8,
+        elevation: 4,
     },
     statNumber: {
-        fontSize: 24,
+        fontSize: 28,
         fontWeight: 'bold',
-        color: '#3498db',
-        marginBottom: 4,
+        marginBottom: 6,
     },
     statLabel: {
         fontSize: 12,
         color: '#7f8c8d',
         textAlign: 'center',
+        fontWeight: '500',
     },
-    menuContainer: {
+    actionsSection: {
         flex: 1,
         paddingHorizontal: 24,
-        paddingTop: 20,
+        paddingTop: 10,
     },
-    menuTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#2c3e50',
-        marginBottom: 20,
+    actionsContainer: {
+        gap: 16,
     },
-    menuItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
+    actionCard: {
         backgroundColor: '#fff',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
+        borderRadius: 16,
+        borderLeftWidth: 4,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
+        shadowRadius: 12,
+        elevation: 6,
     },
-    menuItemLeft: {
+    actionContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        flex: 1,
+        padding: 20,
     },
-    menuIcon: {
-        fontSize: 24,
+    actionIcon: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        justifyContent: 'center',
+        alignItems: 'center',
         marginRight: 16,
     },
-    menuText: {
+    actionIconText: {
+        fontSize: 24,
+    },
+    actionText: {
         flex: 1,
     },
-    menuItemTitle: {
-        fontSize: 16,
-        fontWeight: '600',
+    actionTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
         color: '#2c3e50',
-        marginBottom: 2,
+        marginBottom: 4,
     },
-    menuItemSubtitle: {
+    actionSubtitle: {
         fontSize: 14,
         color: '#7f8c8d',
+        lineHeight: 20,
     },
-    menuArrow: {
-        fontSize: 20,
+    actionArrow: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    arrowText: {
+        fontSize: 24,
         color: '#bdc3c7',
+        fontWeight: 'bold',
+    },
+    reminderSection: {
+        paddingHorizontal: 24,
+        paddingVertical: 16,
+    },
+    reminderCard: {
+        flexDirection: 'row',
+        backgroundColor: '#fff3cd',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+        borderLeftWidth: 4,
+        borderLeftColor: '#f39c12',
+    },
+    reminderIcon: {
+        fontSize: 24,
+        marginRight: 12,
+    },
+    reminderText: {
+        flex: 1,
+    },
+    reminderTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#856404',
+        marginBottom: 2,
+    },
+    reminderSubtitle: {
+        fontSize: 12,
+        color: '#856404',
+        lineHeight: 16,
     },
     footer: {
         paddingHorizontal: 24,
@@ -287,6 +362,12 @@ const styles = StyleSheet.create({
     footerText: {
         fontSize: 12,
         color: '#95a5a6',
+        fontWeight: '600',
+    },
+    footerSubtext: {
+        fontSize: 10,
+        color: '#bdc3c7',
+        marginTop: 2,
     },
 });
 
