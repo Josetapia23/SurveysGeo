@@ -8,12 +8,14 @@ import {
     Alert,
     FlatList,
     Dimensions,
-    ActivityIndicator
+    ActivityIndicator,
+    Linking,
+    Platform
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { RootStackParamList } from '../navigation/types';   
+import { RootStackParamList } from '../navigation/types';
 import { useUser } from '../context/UserContext';
 import { Client } from '../../App';
 
@@ -226,18 +228,128 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
         }
     };
 
+    // ✨ NUEVA FUNCIÓN: Abrir navegación en app de mapas externa
+    const openExternalNavigation = async (client: Client): Promise<void> => {
+        const { latitude, longitude } = client.coordinates;
+        const label = `${client.nombre} ${client.apellido}`;
+        const address = `${client.direccion}, ${client.barrio}, ${client.ciudad}`;
+
+        // Diferentes URLs según la plataforma
+        let url = '';
+
+        if (Platform.OS === 'ios') {
+            // Para iOS - Apple Maps por defecto, pero también detecta otras apps
+            url = `maps:0,0?q=${latitude},${longitude}`;
+            // Alternativa con dirección: `maps:0,0?q=${encodeURIComponent(address)}`
+        } else {
+            // Para Android - Google Maps
+            url = `google.navigation:q=${latitude},${longitude}`;
+            // Alternativa: `geo:${latitude},${longitude}?q=${latitude},${longitude}(${encodeURIComponent(label)})`
+        }
+
+        try {
+            const supported = await Linking.canOpenURL(url);
+
+            if (supported) {
+                await Linking.openURL(url);
+            } else {
+                // Fallback: abrir en navegador web con Google Maps
+                const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}&travelmode=driving`;
+                const webSupported = await Linking.canOpenURL(webUrl);
+
+                if (webSupported) {
+                    await Linking.openURL(webUrl);
+                } else {
+                    throw new Error('No se puede abrir la navegación');
+                }
+            }
+        } catch (error) {
+            console.error('Error abriendo navegación:', error);
+            Alert.alert(
+                'Error de Navegación',
+                'No se pudo abrir la aplicación de mapas. Verifica que tengas Google Maps o una app de navegación instalada.',
+                [{ text: 'OK' }]
+            );
+        }
+    };
+
+    // ✨ MEJORADA: Función de navegación con opciones múltiples
     const handleNavigateToClient = (client: Client): void => {
         Alert.alert(
-            'Navegar al Cliente',
-            `¿Deseas abrir la navegación hacia ${client.nombre} ${client.apellido}?`,
+            '🗺️ Navegar hacia el Cliente',
+            `${client.nombre} ${client.apellido}\n📍 ${client.direccion}`,
             [
                 { text: 'Cancelar', style: 'cancel' },
                 {
-                    text: 'Navegar',
-                    onPress: () => {
-                        // TODO: Abrir Google Maps con navegación
-                        Alert.alert('Navegación', 'Próximamente se abrirá Google Maps');
+                    text: '🚗 Abrir Navegación',
+                    onPress: () => openExternalNavigation(client),
+                    style: 'default'
+                }
+            ]
+        );
+    };
+
+    // ✨ NUEVA FUNCIÓN: Opciones múltiples de navegación (avanzado)
+    const showNavigationOptions = (client: Client): void => {
+        const { latitude, longitude } = client.coordinates;
+        const address = encodeURIComponent(`${client.direccion}, ${client.barrio}, ${client.ciudad}`);
+        const label = encodeURIComponent(`${client.nombre} ${client.apellido}`);
+
+        Alert.alert(
+            '🗺️ Selecciona App de Navegación',
+            `Navegar hacia:\n${client.nombre} ${client.apellido}`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: '📍 Google Maps',
+                    onPress: async () => {
+                        const url = Platform.OS === 'ios'
+                            ? `comgooglemaps://?q=${latitude},${longitude}&center=${latitude},${longitude}&zoom=14&views=traffic`
+                            : `google.navigation:q=${latitude},${longitude}`;
+
+                        try {
+                            const supported = await Linking.canOpenURL(url);
+                            if (supported) {
+                                await Linking.openURL(url);
+                            } else {
+                                // Fallback a web
+                                Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`);
+                            }
+                        } catch (error) {
+                            console.error('Error Google Maps:', error);
+                        }
                     }
+                },
+                {
+                    text: '🚨 Waze',
+                    onPress: async () => {
+                        const wazeUrl = `waze://?ll=${latitude},${longitude}&navigate=yes`;
+
+                        try {
+                            const supported = await Linking.canOpenURL(wazeUrl);
+                            if (supported) {
+                                await Linking.openURL(wazeUrl);
+                            } else {
+                                Alert.alert(
+                                    'Waze no instalado',
+                                    '¿Deseas abrir Google Maps en su lugar?',
+                                    [
+                                        { text: 'No', style: 'cancel' },
+                                        {
+                                            text: 'Sí',
+                                            onPress: () => openExternalNavigation(client)
+                                        }
+                                    ]
+                                );
+                            }
+                        } catch (error) {
+                            console.error('Error Waze:', error);
+                        }
+                    }
+                },
+                {
+                    text: '🍎 App de Mapas por Defecto',
+                    onPress: () => openExternalNavigation(client)
                 }
             ]
         );
@@ -380,7 +492,7 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
                             style={styles.actionButton}
                             onPress={() => handleNavigateToClient(selectedClient)}
                         >
-                            <Text style={styles.actionButtonText}>Navegar</Text>
+                            <Text style={styles.actionButtonText}>🗺️ Navegar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.actionButton, styles.actionButtonPrimary]}
@@ -390,10 +502,11 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
                             })}
                         >
                             <Text style={[styles.actionButtonText, styles.actionButtonTextPrimary]}>
-                                Encuestar
+                                📝 Encuestar
                             </Text>
                         </TouchableOpacity>
                     </View>
+
                 </View>
             )}
         </SafeAreaView>
@@ -586,6 +699,7 @@ const styles = StyleSheet.create({
     selectedClientActions: {
         flexDirection: 'row',
         gap: 8,
+        marginBottom: 12,
     },
     actionButton: {
         flex: 1,
@@ -605,6 +719,21 @@ const styles = StyleSheet.create({
     },
     actionButtonTextPrimary: {
         color: '#fff',
+    },
+    // ✨ NUEVOS ESTILOS
+    navigationOptionsButton: {
+        backgroundColor: '#f8f9fa',
+        borderWidth: 1,
+        borderColor: '#dee2e6',
+        borderRadius: 8,
+        paddingVertical: 8,
+        alignItems: 'center',
+        marginTop: 4,
+    },
+    navigationOptionsText: {
+        fontSize: 12,
+        color: '#6c757d',
+        fontWeight: '500',
     },
 });
 
