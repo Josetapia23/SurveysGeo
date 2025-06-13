@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -6,11 +6,15 @@ import {
     StyleSheet,
     SafeAreaView,
     Alert,
-    Dimensions
+    Dimensions,
+    RefreshControl,
+    ScrollView
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';
 import { useUser } from '../context/UserContext';
+import { ApiService, API_CONFIG, LiderResponse } from '../services/api';
 
 // Tipos para navegación
 type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Home'>;
@@ -19,10 +23,11 @@ interface HomeScreenProps {
     navigation: HomeScreenNavigationProp;
 }
 
-interface Stat {
-    number: number;
-    label: string;
-    color: string;
+interface EstadisticasGestor {
+    total: number;
+    pendientes: number;
+    visitados: number;
+    porcentaje_completado: number;
 }
 
 interface MainAction {
@@ -32,21 +37,20 @@ interface MainAction {
     icon: string;
     screen: 'ClientList' | 'Map';
     color: string;
-    gradientColors: string[];
 }
 
 const { width } = Dimensions.get('window');
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
-    // Usar contexto de usuario
     const { user, logout } = useUser();
-
-    // Datos mock - después vendrán de Firebase
-    const stats: Stat[] = [
-        { number: 12, label: 'Clientes Asignados', color: '#3498db' },
-        { number: 8, label: 'Pendientes', color: '#f39c12' },
-        { number: 4, label: 'Completadas', color: '#27ae60' }
-    ];
+    const [estadisticas, setEstadisticas] = useState<EstadisticasGestor>({
+        total: 0,
+        pendientes: 0,
+        visitados: 0,
+        porcentaje_completado: 0
+    });
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
     const mainActions: MainAction[] = [
         {
@@ -55,8 +59,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             subtitle: 'Ver y gestionar clientes asignados',
             icon: '👥',
             screen: 'ClientList',
-            color: '#3498db',
-            gradientColors: ['#3498db', '#2980b9']
+            color: '#3498db'
         },
         {
             id: 'map',
@@ -64,10 +67,56 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             subtitle: 'Ubicar clientes y optimizar rutas',
             icon: '🗺️',
             screen: 'Map',
-            color: '#27ae60',
-            gradientColors: ['#27ae60', '#229954']
+            color: '#27ae60'
         }
     ];
+
+    // Cargar estadísticas del gestor
+    const cargarEstadisticas = async (mostrarRefresh = false): Promise<void> => {
+        try {
+            if (mostrarRefresh) {
+                setIsRefreshing(true);
+            } else {
+                setIsLoading(true);
+            }
+
+            console.log('📊 Cargando estadísticas del gestor...');
+
+            const response = await ApiService.get<{
+                lideres: LiderResponse[];
+                statistics: EstadisticasGestor;
+            }>(API_CONFIG.ENDPOINTS.LIDERES);
+
+            if (response.success && response.data) {
+                setEstadisticas(response.data.statistics);
+                console.log('✅ Estadísticas cargadas:', response.data.statistics);
+            } else {
+                throw new Error(response.message || 'Error obteniendo estadísticas');
+            }
+        } catch (error) {
+            console.error('❌ Error cargando estadísticas:', error);
+            Alert.alert(
+                'Error',
+                'No se pudieron cargar las estadísticas. Verifica tu conexión.',
+                [{ text: 'OK' }]
+            );
+        } finally {
+            setIsLoading(false);
+            setIsRefreshing(false);
+        }
+    };
+
+    // Cargar datos al enfocar la pantalla
+    useFocusEffect(
+        useCallback(() => {
+            cargarEstadisticas();
+        }, [])
+    );
+
+    // Función para refrescar
+    const onRefresh = useCallback(() => {
+        cargarEstadisticas(true);
+    }, []);
 
     const handleLogout = (): void => {
         Alert.alert(
@@ -95,86 +144,124 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
     return (
         <SafeAreaView style={styles.container}>
-            {/* Header con información del usuario */}
-            <View style={styles.header}>
-                <View style={styles.welcomeSection}>
-                    <Text style={styles.welcomeText}>¡Hola!</Text>
-                    <Text style={styles.userName}>{user.name}</Text>
-                    <Text style={styles.roleText}>Gestor de Encuestas</Text>
+            <ScrollView
+                style={styles.scrollContainer}
+                refreshControl={
+                    <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+                }
+            >
+                {/* Header con información del usuario */}
+                <View style={styles.header}>
+                    <View style={styles.welcomeSection}>
+                        <Text style={styles.welcomeText}>¡Hola!</Text>
+                        <Text style={styles.userName}>{user.name}</Text>
+                        <Text style={styles.roleText}>Gestor de Encuestas</Text>
+                    </View>
+                    <TouchableOpacity
+                        style={styles.logoutButton}
+                        onPress={handleLogout}
+                    >
+                        <Text style={styles.logoutIcon}>👋</Text>
+                    </TouchableOpacity>
                 </View>
-                <TouchableOpacity
-                    style={styles.logoutButton}
-                    onPress={handleLogout}
-                >
-                    <Text style={styles.logoutIcon}>👋</Text>
-                </TouchableOpacity>
-            </View>
 
-            {/* Estadísticas del día */}
-            <View style={styles.statsSection}>
-                <Text style={styles.sectionTitle}>Resumen del día</Text>
-                <View style={styles.statsContainer}>
-                    {stats.map((stat, index) => (
-                        <View key={index} style={styles.statCard}>
-                            <Text style={[styles.statNumber, { color: stat.color }]}>
-                                {stat.number}
+                {/* Estadísticas del gestor */}
+                <View style={styles.statsSection}>
+                    <Text style={styles.sectionTitle}>
+                        {isLoading ? 'Cargando estadísticas...' : 'Resumen del día'}
+                    </Text>
+                    <View style={styles.statsContainer}>
+                        <View style={styles.statCard}>
+                            <Text style={[styles.statNumber, { color: '#3498db' }]}>
+                                {estadisticas.total}
                             </Text>
-                            <Text style={styles.statLabel}>{stat.label}</Text>
+                            <Text style={styles.statLabel}>Clientes Asignados</Text>
                         </View>
-                    ))}
-                </View>
-            </View>
+                        <View style={styles.statCard}>
+                            <Text style={[styles.statNumber, { color: '#f39c12' }]}>
+                                {estadisticas.pendientes}
+                            </Text>
+                            <Text style={styles.statLabel}>Pendientes</Text>
+                        </View>
+                        <View style={styles.statCard}>
+                            <Text style={[styles.statNumber, { color: '#27ae60' }]}>
+                                {estadisticas.visitados}
+                            </Text>
+                            <Text style={styles.statLabel}>Completadas</Text>
+                        </View>
+                    </View>
 
-            {/* Acciones principales */}
-            <View style={styles.actionsSection}>
-                <Text style={styles.sectionTitle}>¿Qué vas a hacer?</Text>
-                <Text style={styles.sectionSubtitle}>
-                    Selecciona una opción para comenzar tu trabajo
-                </Text>
-
-                <View style={styles.actionsContainer}>
-                    {mainActions.map((action) => (
-                        <TouchableOpacity
-                            key={action.id}
-                            style={[styles.actionCard, { borderLeftColor: action.color }]}
-                            onPress={() => handleActionPress(action.screen)}
-                            activeOpacity={0.8}
-                        >
-                            <View style={styles.actionContent}>
-                                <View style={[styles.actionIcon, { backgroundColor: action.color }]}>
-                                    <Text style={styles.actionIconText}>{action.icon}</Text>
-                                </View>
-                                <View style={styles.actionText}>
-                                    <Text style={styles.actionTitle}>{action.title}</Text>
-                                    <Text style={styles.actionSubtitle}>{action.subtitle}</Text>
-                                </View>
-                                <View style={styles.actionArrow}>
-                                    <Text style={styles.arrowText}>›</Text>
-                                </View>
-                            </View>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            </View>
-
-            {/* Recordatorio útil */}
-            <View style={styles.reminderSection}>
-                <View style={styles.reminderCard}>
-                    <Text style={styles.reminderIcon}>💡</Text>
-                    <View style={styles.reminderText}>
-                        <Text style={styles.reminderTitle}>Consejo del día</Text>
-                        <Text style={styles.reminderSubtitle}>
-                            Usa el mapa para planificar tu ruta y visitar clientes cercanos primero
+                    {/* Progreso */}
+                    <View style={styles.progressContainer}>
+                        <Text style={styles.progressTitle}>Progreso del día</Text>
+                        <View style={styles.progressBar}>
+                            <View
+                                style={[
+                                    styles.progressFill,
+                                    { width: `${estadisticas.porcentaje_completado}%` }
+                                ]}
+                            />
+                        </View>
+                        <Text style={styles.progressText}>
+                            {estadisticas.porcentaje_completado}% completado
                         </Text>
                     </View>
                 </View>
-            </View>
 
-            {/* Footer */}
-            <View style={styles.footer}>
-                <Text style={styles.footerText}>SurveysGeo v1.0</Text>
-                <Text style={styles.footerSubtext}>Trabajo de campo optimizado</Text>
-            </View>
+                {/* Acciones principales */}
+                <View style={styles.actionsSection}>
+                    <Text style={styles.sectionTitle}>¿Qué vas a hacer?</Text>
+                    <Text style={styles.sectionSubtitle}>
+                        Selecciona una opción para comenzar tu trabajo
+                    </Text>
+
+                    <View style={styles.actionsContainer}>
+                        {mainActions.map((action) => (
+                            <TouchableOpacity
+                                key={action.id}
+                                style={[styles.actionCard, { borderLeftColor: action.color }]}
+                                onPress={() => handleActionPress(action.screen)}
+                                activeOpacity={0.8}
+                            >
+                                <View style={styles.actionContent}>
+                                    <View style={[styles.actionIcon, { backgroundColor: action.color }]}>
+                                        <Text style={styles.actionIconText}>{action.icon}</Text>
+                                    </View>
+                                    <View style={styles.actionText}>
+                                        <Text style={styles.actionTitle}>{action.title}</Text>
+                                        <Text style={styles.actionSubtitle}>{action.subtitle}</Text>
+                                    </View>
+                                    <View style={styles.actionArrow}>
+                                        <Text style={styles.arrowText}>›</Text>
+                                    </View>
+                                </View>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </View>
+
+                {/* Recordatorio útil */}
+                <View style={styles.reminderSection}>
+                    <View style={styles.reminderCard}>
+                        <Text style={styles.reminderIcon}>💡</Text>
+                        <View style={styles.reminderText}>
+                            <Text style={styles.reminderTitle}>Consejo del día</Text>
+                            <Text style={styles.reminderSubtitle}>
+                                {estadisticas.pendientes > 0
+                                    ? `Tienes ${estadisticas.pendientes} clientes pendientes. Usa el mapa para planificar tu ruta.`
+                                    : '¡Felicidades! Has completado todas tus encuestas del día.'
+                                }
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+
+                {/* Footer */}
+                <View style={styles.footer}>
+                    <Text style={styles.footerText}>SurveysGeo v1.0</Text>
+                    <Text style={styles.footerSubtext}>Conectado a API real</Text>
+                </View>
+            </ScrollView>
         </SafeAreaView>
     );
 };
@@ -183,6 +270,9 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#f8f9fa',
+    },
+    scrollContainer: {
+        flex: 1,
     },
     header: {
         flexDirection: 'row',
@@ -242,6 +332,7 @@ const styles = StyleSheet.create({
     statsContainer: {
         flexDirection: 'row',
         gap: 12,
+        marginBottom: 20,
     },
     statCard: {
         flex: 1,
@@ -265,6 +356,38 @@ const styles = StyleSheet.create({
         color: '#7f8c8d',
         textAlign: 'center',
         fontWeight: '500',
+    },
+    progressContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    progressTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#2c3e50',
+        marginBottom: 12,
+    },
+    progressBar: {
+        height: 8,
+        backgroundColor: '#ecf0f1',
+        borderRadius: 4,
+        marginBottom: 8,
+    },
+    progressFill: {
+        height: '100%',
+        backgroundColor: '#27ae60',
+        borderRadius: 4,
+    },
+    progressText: {
+        fontSize: 14,
+        color: '#7f8c8d',
+        textAlign: 'center',
     },
     actionsSection: {
         flex: 1,

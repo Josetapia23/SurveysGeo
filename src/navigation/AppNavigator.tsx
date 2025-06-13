@@ -11,7 +11,6 @@ import HomeScreen from '../screens/HomeScreen';
 import ClientListScreen from '../screens/ClientListScreen';
 import MapScreen from '../screens/MapScreen';
 import SurveyScreen from '../screens/SurveyScreen';
-import { DashboardScreen } from '../screens/DashboardScreen';
 
 // Crear Stack Navigator
 const Stack = createStackNavigator<RootStackParamList>();
@@ -66,13 +65,6 @@ const AuthenticatedNavigator: React.FC = () => {
                 component={SurveyScreen}
                 options={{
                     title: 'Realizar Encuesta',
-                }}
-            />
-            <Stack.Screen
-                name="Dashboard"
-                component={DashboardScreen}
-                options={{
-                    title: 'Mi Dashboard',
                 }}
             />
         </Stack.Navigator>
