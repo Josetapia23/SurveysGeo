@@ -1,4 +1,5 @@
 import React from 'react';
+import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { RootStackParamList } from './types';
@@ -14,6 +15,14 @@ import { DashboardScreen } from '../screens/DashboardScreen';
 
 // Crear Stack Navigator
 const Stack = createStackNavigator<RootStackParamList>();
+
+// Pantalla de carga
+const LoadingScreen: React.FC = () => (
+    <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3498db" />
+        <Text style={styles.loadingText}>Verificando sesión...</Text>
+    </View>
+);
 
 // Navegador autenticado (cuando el usuario está logueado)
 const AuthenticatedNavigator: React.FC = () => {
@@ -81,11 +90,16 @@ const UnauthenticatedNavigator: React.FC = () => {
 
 // Navegador principal que decide qué mostrar
 const AppNavigator: React.FC = () => {
-    const { user } = useUser();
+    const { isLoading, isAuthenticated } = useUser();
+
+    // Mostrar pantalla de carga mientras verifica autenticación
+    if (isLoading) {
+        return <LoadingScreen />;
+    }
 
     return (
         <NavigationContainer>
-            {user ? <AuthenticatedNavigator /> : <UnauthenticatedNavigator />}
+            {isAuthenticated ? <AuthenticatedNavigator /> : <UnauthenticatedNavigator />}
         </NavigationContainer>
     );
 };
@@ -98,5 +112,20 @@ const AppWithProvider: React.FC = () => {
         </UserProvider>
     );
 };
+
+const styles = StyleSheet.create({
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa',
+    },
+    loadingText: {
+        marginTop: 16,
+        fontSize: 16,
+        color: '#7f8c8d',
+        fontWeight: '500',
+    },
+});
 
 export default AppWithProvider;

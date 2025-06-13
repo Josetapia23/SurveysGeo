@@ -11,7 +11,6 @@ import {
     SafeAreaView
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
-import { User } from '../../App';
 import { RootStackParamList } from '../navigation/types';
 import { useUser } from '../context/UserContext';
 
@@ -22,128 +21,34 @@ interface LoginScreenProps {
     navigation: LoginScreenNavigationProp;
 }
 
-// Tipos para la respuesta de la API
-interface LoginResponse {
-    success: boolean;
-    data?: {
-        gestor_id: string;
-        nombre: string;
-        apellido: string;
-        email: string;
-        cedula?: string;
-        telefono?: string;
-    };
-    message?: string;
-}
-
 const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
-    const [email, setEmail] = useState<string>('juan.perez@surveysgeo.com');
-    const [password, setPassword] = useState<string>('123456');
-    const [loading, setLoading] = useState<boolean>(false);
-
-    // Usar contexto de usuario
-    const { login } = useUser();
-
-    // ⚙️ CONFIGURACIÓN DE LA API
-    // URL exacta de PHPRunner
-    const API_BASE_URL = 'http://192.168.2.117/Surveysgeo/output';
+    const [usuario, setUsuario] = useState<string>('');
+    const [password, setPassword] = useState<string>('');
+    const { login, isLoading } = useUser();
 
     const handleLogin = async (): Promise<void> => {
-        if (!email.trim() || !password.trim()) {
+        if (!usuario.trim() || !password.trim()) {
             Alert.alert('Error', 'Por favor completa todos los campos');
             return;
         }
 
-        setLoading(true);
-
         try {
-            // Llamar a la API de PHPRunner
-            const response = await fetch(`${API_BASE_URL}/login.php?page=login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                    btnSubmit: 'Login',
-                    username: email,
-                    password: password,
-                }).toString()
-            });
-
-            console.log('Status:', response.status);
-            console.log('Response Headers:', response.headers);
-
-            if (response.ok) {
-                // Si el login es exitoso, PHPRunner redirecciona
-                // Verificamos si nos redirigió a una página diferente
-                const finalUrl = response.url;
-                console.log('Final URL:', finalUrl);
-
-                if (finalUrl.includes('menu.php') || finalUrl.includes('main') || finalUrl.includes('dashboard') || !finalUrl.includes('login')) {
-                    // Login exitoso - crear usuario con datos del gestor real
-                    const userData: User = {
-                        id: '1', // ID del gestor Juan Carlos
-                        email: email,
-                        name: email.includes('juan') ? 'Juan Carlos Pérez' : 'María Fernanda García',
-                        role: 'gestor'
-                    };
-
-                    login(userData);
-                    Alert.alert('Éxito', 'Login exitoso con PHPRunner');
-                } else {
-                    // Login fallido
-                    Alert.alert('Error', 'Credenciales incorrectas');
-                }
-            } else {
-                Alert.alert('Error', `Error del servidor: ${response.status}`);
-            }
-
+            await login(usuario.trim(), password.trim());
+            // Si llega aquí, el login fue exitoso
+            // La navegación se maneja automáticamente en AppNavigator
         } catch (error) {
-            console.error('Error de conexión:', error);
-            Alert.alert(
-                'Error de Conexión',
-                'No se pudo conectar al servidor. Verifica:\n' +
-                '• Que PHPRunner esté ejecutándose\n' +
-                '• La dirección IP sea correcta\n' +
-                '• Ambos dispositivos estén en la misma red'
-            );
-        } finally {
-            setLoading(false);
+            // Mostrar error al usuario
+            const errorMessage = error instanceof Error ? error.message : 'Error inesperado';
+            Alert.alert('Error de Login', errorMessage);
         }
-    };
-
-    // Función auxiliar para extraer nombre del email
-    const extractNameFromEmail = (email: string): string => {
-        const name = email.split('@')[0];
-        return name.charAt(0).toUpperCase() + name.slice(1).replace('.', ' ');
     };
 
     const handleForgotPassword = (): void => {
         Alert.alert(
             'Recuperar Contraseña',
-            'Contacta al administrador para recuperar tu contraseña',
+            'Contacta al administrador para recuperar tu contraseña.',
             [{ text: 'OK' }]
         );
-    };
-
-    // Función para probar conexión
-    const testConnection = async (): Promise<void> => {
-        setLoading(true);
-        try {
-            const response = await fetch(`${API_BASE_URL}/login.php?page=login`, {
-                method: 'GET'
-            });
-
-            if (response.ok) {
-                Alert.alert('Conexión OK', 'Se puede conectar al servidor PHPRunner');
-            } else {
-                Alert.alert('Error', `Servidor responde con error: ${response.status}`);
-            }
-        } catch (error) {
-            Alert.alert('Error', 'No se puede conectar al servidor');
-        } finally {
-            setLoading(false);
-        }
     };
 
     return (
@@ -157,35 +62,22 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                     <View style={styles.header}>
                         <Text style={styles.title}>SurveysGeo</Text>
                         <Text style={styles.subtitle}>Control de Visitas</Text>
-                        <Text style={styles.description}>Conectado a PHPRunner</Text>
-                    </View>
-
-                    {/* Configuración de red */}
-                    <View style={styles.networkInfo}>
-                        <Text style={styles.networkTitle}>Servidor:</Text>
-                        <Text style={styles.networkUrl}>{API_BASE_URL}</Text>
-                        <TouchableOpacity
-                            style={styles.testButton}
-                            onPress={testConnection}
-                            disabled={loading}
-                        >
-                            <Text style={styles.testButtonText}>Probar Conexión</Text>
-                        </TouchableOpacity>
+                        <Text style={styles.description}>Ingresa a tu cuenta</Text>
                     </View>
 
                     {/* Formulario */}
                     <View style={styles.form}>
                         <View style={styles.inputContainer}>
-                            <Text style={styles.label}>Email</Text>
+                            <Text style={styles.label}>Usuario</Text>
                             <TextInput
                                 style={styles.input}
-                                placeholder="juan.perez@surveysgeo.com"
-                                value={email}
-                                onChangeText={setEmail}
+                                placeholder="usuario@email.com"
+                                value={usuario}
+                                onChangeText={setUsuario}
                                 keyboardType="email-address"
                                 autoCapitalize="none"
                                 autoCorrect={false}
-                                editable={!loading}
+                                editable={!isLoading}
                             />
                         </View>
 
@@ -197,14 +89,14 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                                 value={password}
                                 onChangeText={setPassword}
                                 secureTextEntry
-                                editable={!loading}
+                                editable={!isLoading}
                             />
                         </View>
 
                         <TouchableOpacity
                             style={styles.forgotPassword}
                             onPress={handleForgotPassword}
-                            disabled={loading}
+                            disabled={isLoading}
                         >
                             <Text style={styles.forgotPasswordText}>
                                 ¿Olvidaste tu contraseña?
@@ -212,33 +104,32 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ navigation }) => {
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+                            style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
                             onPress={handleLogin}
-                            disabled={loading}
+                            disabled={isLoading}
                         >
                             <Text style={styles.loginButtonText}>
-                                {loading ? 'Conectando...' : 'Ingresar con PHPRunner'}
+                                {isLoading ? 'Ingresando...' : 'Ingresar'}
                             </Text>
                         </TouchableOpacity>
                     </View>
 
                     {/* Datos de prueba */}
                     <View style={styles.testData}>
-                        <Text style={styles.testDataTitle}>Datos de PHPRunner:</Text>
-                        <Text style={styles.testDataText}>juan.perez@surveysgeo.com</Text>
-                        <Text style={styles.testDataText}>Password: 123456</Text>
-                        <Text style={styles.testDataSmall}>
-                            Hash BD: e10adc3949ba59abbe56e057f20f883e
+                        <Text style={styles.testDataTitle}>Datos de Prueba:</Text>
+                        <Text style={styles.testDataText}>pendiente@gmail - 12345</Text>
+                        <Text style={styles.testDataSubtext}>
+                            Usuario: Santiago Campbell
                         </Text>
                     </View>
 
-                    {/* Instrucciones de red */}
-                    <View style={styles.instructions}>
-                        <Text style={styles.instructionsTitle}>💡 Configuración:</Text>
-                        <Text style={styles.instructionsText}>
-                            1. Cambia API_BASE_URL por la IP de tu PC{'\n'}
-                            2. Asegúrate que PHPRunner esté ejecutándose{'\n'}
-                            3. Ambos dispositivos en la misma red WiFi
+                    {/* Información de la API */}
+                    <View style={styles.apiInfo}>
+                        <Text style={styles.apiInfoText}>
+                            Conectado a API local
+                        </Text>
+                        <Text style={styles.apiInfoSubtext}>
+                            localhost/surveys-api
                         </Text>
                     </View>
                 </View>
@@ -262,7 +153,7 @@ const styles = StyleSheet.create({
     },
     header: {
         alignItems: 'center',
-        marginBottom: 30,
+        marginBottom: 40,
     },
     title: {
         fontSize: 32,
@@ -278,41 +169,10 @@ const styles = StyleSheet.create({
     },
     description: {
         fontSize: 16,
-        color: '#27ae60',
-        fontWeight: '500',
-    },
-    networkInfo: {
-        backgroundColor: '#e8f4f8',
-        padding: 16,
-        borderRadius: 8,
-        marginBottom: 20,
-        alignItems: 'center',
-    },
-    networkTitle: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#2c3e50',
-        marginBottom: 4,
-    },
-    networkUrl: {
-        fontSize: 12,
-        color: '#3498db',
-        fontFamily: 'monospace',
-        marginBottom: 8,
-    },
-    testButton: {
-        backgroundColor: '#3498db',
-        paddingHorizontal: 16,
-        paddingVertical: 6,
-        borderRadius: 12,
-    },
-    testButtonText: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: '600',
+        color: '#7f8c8d',
     },
     form: {
-        marginBottom: 20,
+        marginBottom: 30,
     },
     inputContainer: {
         marginBottom: 20,
@@ -341,7 +201,7 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
     loginButton: {
-        backgroundColor: '#27ae60',
+        backgroundColor: '#3498db',
         borderRadius: 8,
         paddingVertical: 14,
         alignItems: 'center',
@@ -356,7 +216,7 @@ const styles = StyleSheet.create({
     },
     testData: {
         padding: 16,
-        backgroundColor: '#e8f5e8',
+        backgroundColor: '#e8f4f8',
         borderRadius: 8,
         alignItems: 'center',
         marginBottom: 16,
@@ -369,33 +229,33 @@ const styles = StyleSheet.create({
     },
     testDataText: {
         fontSize: 12,
-        color: '#27ae60',
-        marginBottom: 2,
-        fontWeight: '500',
-    },
-    testDataSmall: {
-        fontSize: 10,
         color: '#7f8c8d',
+        marginBottom: 2,
         fontFamily: 'monospace',
-        marginTop: 4,
     },
-    instructions: {
-        padding: 16,
+    testDataSubtext: {
+        fontSize: 10,
+        color: '#95a5a6',
+        fontStyle: 'italic',
+    },
+    apiInfo: {
+        padding: 12,
         backgroundColor: '#fff3cd',
         borderRadius: 8,
+        alignItems: 'center',
         borderLeftWidth: 4,
         borderLeftColor: '#f39c12',
     },
-    instructionsTitle: {
-        fontSize: 14,
+    apiInfoText: {
+        fontSize: 12,
         fontWeight: '600',
         color: '#856404',
-        marginBottom: 8,
+        marginBottom: 2,
     },
-    instructionsText: {
-        fontSize: 12,
+    apiInfoSubtext: {
+        fontSize: 10,
         color: '#856404',
-        lineHeight: 16,
+        fontFamily: 'monospace',
     },
 });
 
