@@ -6,13 +6,15 @@ import {
     StyleSheet,
     SafeAreaView,
     Alert,
-    ScrollView
+    ScrollView,
+    ActivityIndicator
 } from 'react-native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { RouteProp } from '@react-navigation/native';
+import * as Location from 'expo-location';
 import { RootStackParamList } from '../navigation/types';
 import { useUser } from '../context/UserContext';
-import { Survey } from '../../App';
+import { ApiService, API_CONFIG } from '../services/api';
 
 // Tipos para navegación
 type SurveyScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Survey'>;
@@ -26,9 +28,18 @@ interface SurveyScreenProps {
 type Answer = 'si' | 'no' | null;
 
 interface SurveyData {
-    pregunta1: Answer; // ¿Conoce el candidato?
-    pregunta2: Answer; // ¿Desea apoyar la campaña?
-    pregunta3: Answer; // Pregunta adicional (por si se necesita)
+    pregunta1: Answer;
+    pregunta2: Answer;
+    pregunta3: Answer;
+}
+
+// Formato que espera la API
+interface EncuestaApiData {
+    id_lider: number;
+    pregunta1: 'S' | 'N';
+    pregunta2: 'S' | 'N';
+    pregunta3: 'S' | 'N';
+    ubicacion: string; // formato: "lat,lng"
 }
 
 const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
@@ -42,18 +53,76 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
     });
 
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-    const [currentLocation, setCurrentLocation] = useState<{ latitude: number, longitude: number } | null>(null);
+    const [currentLocation, setCurrentLocation] = useState<{
+        latitude: number,
+        longitude: number
+    } | null>(null);
+    const [locationError, setLocationError] = useState<string | null>(null);
+    const [isLoadingLocation, setIsLoadingLocation] = useState<boolean>(true);
 
-    // Simulación de obtener ubicación (después usaremos expo-location)
+    // 🔥 OBTENER UBICACIÓN REAL DEL DISPOSITIVO
     useEffect(() => {
-        // Simular obtención de GPS
-        setTimeout(() => {
-            setCurrentLocation({
-                latitude: 10.9639 + (Math.random() - 0.5) * 0.01, // Variación pequeña en Barranquilla
-                longitude: -74.7964 + (Math.random() - 0.5) * 0.01
-            });
-        }, 1000);
+        getCurrentLocation();
     }, []);
+
+    const getCurrentLocation = async (): Promise<void> => {
+        try {
+            setIsLoadingLocation(true);
+            setLocationError(null);
+
+            console.log('📍 Solicitando permisos de ubicación...');
+
+            // Solicitar permisos de ubicación
+            const { status } = await Location.requestForegroundPermissionsAsync();
+
+            if (status !== 'granted') {
+                setLocationError('Permisos de ubicación denegados');
+                Alert.alert(
+                    'Permisos Requeridos',
+                    'Esta app necesita acceso a la ubicación para registrar el lugar de la encuesta.',
+                    [
+                        { text: 'Configuración', onPress: () => Location.requestForegroundPermissionsAsync() },
+                        { text: 'Cancelar' }
+                    ]
+                );
+                return;
+            }
+
+            console.log('📍 Obteniendo ubicación GPS...');
+
+            // Obtener ubicación actual
+            const location = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.High,
+
+            });
+
+            const coords = {
+                latitude: location.coords.latitude,
+                longitude: location.coords.longitude
+            };
+
+            setCurrentLocation(coords);
+            setLocationError(null);
+
+            console.log('✅ Ubicación obtenida:', coords);
+            console.log(`📍 Precisión: ${location.coords.accuracy}m`);
+
+        } catch (error) {
+            console.error('❌ Error obteniendo ubicación:', error);
+            setLocationError('Error obteniendo ubicación GPS');
+
+            Alert.alert(
+                'Error GPS',
+                'No se pudo obtener la ubicación. Verifica que el GPS esté activado y tengas conexión.',
+                [
+                    { text: 'Reintentar', onPress: getCurrentLocation },
+                    { text: 'Cancelar' }
+                ]
+            );
+        } finally {
+            setIsLoadingLocation(false);
+        }
+    };
 
     // Preguntas de la encuesta
     const questions = [
@@ -99,25 +168,53 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
 
         if (!currentLocation) {
             Alert.alert(
-                'Obteniendo Ubicación',
-                'Esperando la ubicación GPS. Por favor intente en un momento.',
-                [{ text: 'OK' }]
+                'Ubicación Requerida',
+                'Es necesario obtener la ubicación GPS para completar la encuesta.',
+                [
+                    { text: 'Reintentar GPS', onPress: getCurrentLocation },
+                    { text: 'Cancelar' }
+                ]
             );
             return;
         }
 
         if (!client || !user) {
-            Alert.alert('Error', 'Información del cliente o usuario no disponible');
+            Alert.alert('Error', 'Información del líder o usuario no disponible');
             return;
         }
 
+        // Verificar si ya existe una encuesta para este líder
+        if (client.status === 'visitado') {
+            Alert.alert(
+                'Líder ya encuestado',
+                'Este líder ya tiene una encuesta registrada. ¿Deseas continuar de todas formas?',
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Continuar', onPress: () => showConfirmation() }
+                ]
+            );
+            return;
+        }
+
+        showConfirmation();
+    };
+
+    const showConfirmation = (): void => {
         Alert.alert(
             'Confirmar Encuesta',
-            `¿Está seguro de enviar la encuesta para ${client.nombre} ${client.apellido}?`,
+            `¿Está seguro de enviar la encuesta para ${client?.nombre} ${client?.apellido}?
+
+📍 Ubicación: ${currentLocation?.latitude.toFixed(6)}, ${currentLocation?.longitude.toFixed(6)}
+📅 Fecha: ${new Date().toLocaleString()}
+
+Respuestas:
+• Pregunta 1: ${surveyData.pregunta1 === 'si' ? 'SÍ' : 'NO'}
+• Pregunta 2: ${surveyData.pregunta2 === 'si' ? 'SÍ' : 'NO'}
+• Pregunta 3: ${surveyData.pregunta3 === 'si' ? 'SÍ' : 'NO'}`,
             [
                 { text: 'Cancelar', style: 'cancel' },
                 {
-                    text: 'Confirmar',
+                    text: 'Confirmar y Enviar',
                     onPress: submitSurvey,
                     style: 'default'
                 }
@@ -125,54 +222,121 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
         );
     };
 
+    // 🔥 ENVIAR ENCUESTA A LA API REAL
     const submitSurvey = async (): Promise<void> => {
         setIsSubmitting(true);
 
         try {
-            // Crear objeto de encuesta
-            const survey: Survey = {
-                id: `survey_${client?.id}_${Date.now()}`,
-                clientId: client?.id || '',
-                gestorId: user?.id || '',
-                responses: {
-                    pregunta1: surveyData.pregunta1 || 'no',
-                    pregunta2: surveyData.pregunta2 || 'no',
-                    pregunta3: surveyData.pregunta3 || 'no',
-                },
-                timestamp: new Date().toISOString(),
-                location: currentLocation || { latitude: 0, longitude: 0 }
+            if (!currentLocation || !client || !user) {
+                throw new Error('Datos incompletos para enviar encuesta');
+            }
+
+            console.log('📤 Enviando encuesta a la API...');
+
+            // Formato de ubicación que espera la API: "lat,lng"
+            const ubicacion = `${currentLocation.latitude},${currentLocation.longitude}`;
+
+            // Convertir respuestas al formato que espera la API
+            const encuestaData: EncuestaApiData = {
+                id_lider: parseInt(client.id),
+                pregunta1: surveyData.pregunta1 === 'si' ? 'S' : 'N',
+                pregunta2: surveyData.pregunta2 === 'si' ? 'S' : 'N',
+                pregunta3: surveyData.pregunta3 === 'si' ? 'S' : 'N',
+                ubicacion: ubicacion
             };
 
-            // Simular guardado (después será Firebase)
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            console.log('📋 Datos de encuesta a enviar:', encuestaData);
 
-            console.log('Encuesta guardada:', survey);
-
-            Alert.alert(
-                'Encuesta Enviada',
-                'La encuesta ha sido guardada exitosamente.',
-                [
-                    {
-                        text: 'OK',
-                        onPress: () => {
-                            // Navegar de vuelta a la lista de clientes
-                            navigation.navigate('ClientList');
-                        }
-                    }
-                ]
+            // 🚀 ENVIAR A LA API REAL
+            const response = await ApiService.post(
+                API_CONFIG.ENDPOINTS.ENCUESTAS,
+                encuestaData
             );
 
-        } catch (error) {
-            console.error('Error al guardar encuesta:', error);
+            if (response.success) {
+                console.log('✅ Encuesta enviada exitosamente:', response.data);
+
+                Alert.alert(
+                    '✅ Encuesta Enviada',
+                    `La encuesta para ${client.nombre} ${client.apellido} ha sido guardada exitosamente.
+
+📍 Ubicación registrada
+📅 Fecha: ${new Date().toLocaleString()}
+🆔 ID Encuesta: ${response.data?.encuesta_id || 'N/A'}`,
+                    [
+                        {
+                            text: 'Ver Lista',
+                            onPress: () => {
+                                // Navegar de vuelta a la lista de líderes
+                                navigation.navigate('ClientList');
+                            }
+                        },
+                        {
+                            text: 'Ir al Mapa',
+                            onPress: () => {
+                                navigation.navigate('Map');
+                            }
+                        }
+                    ]
+                );
+            } else {
+                throw new Error(response.message || 'Error guardando encuesta en el servidor');
+            }
+
+        } catch (error: any) {
+            console.error('❌ Error enviando encuesta:', error);
+
+            let errorMessage = 'Hubo un problema al enviar la encuesta.';
+
+            if (error.message) {
+                errorMessage += `\n\nDetalle: ${error.message}`;
+            }
+
             Alert.alert(
-                'Error',
-                'Hubo un problema al guardar la encuesta. Intente nuevamente.',
-                [{ text: 'OK' }]
+                'Error al Enviar',
+                errorMessage,
+                [
+                    { text: 'Reintentar', onPress: submitSurvey },
+                    { text: 'Cancelar' }
+                ]
             );
         } finally {
             setIsSubmitting(false);
         }
     };
+
+    // Renderizar estado de ubicación mejorado
+    const renderLocationStatus = () => (
+        <View style={styles.locationContainer}>
+            {isLoadingLocation ? (
+                <View style={styles.locationLoading}>
+                    <ActivityIndicator size="small" color="#3498db" />
+                    <Text style={styles.locationText}>⏳ Obteniendo ubicación GPS...</Text>
+                </View>
+            ) : locationError ? (
+                <View style={styles.locationError}>
+                    <Text style={styles.locationErrorText}>❌ {locationError}</Text>
+                    <TouchableOpacity
+                        style={styles.retryButton}
+                        onPress={getCurrentLocation}
+                    >
+                        <Text style={styles.retryButtonText}>Reintentar</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : currentLocation ? (
+                <View style={styles.locationSuccess}>
+                    <Text style={styles.locationText}>
+                        ✅ Ubicación obtenida
+                    </Text>
+                    <Text style={styles.locationCoords}>
+                        📍 {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
+                    </Text>
+                </View>
+            ) : (
+                <Text style={styles.locationText}>📍 Ubicación no disponible</Text>
+            )}
+        </View>
+    );
 
     const renderQuestion = (question: typeof questions[0], questionKey: keyof SurveyData) => (
         <View key={question.id} style={styles.questionContainer}>
@@ -219,7 +383,7 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
         return (
             <SafeAreaView style={styles.container}>
                 <View style={styles.errorContainer}>
-                    <Text style={styles.errorText}>No se encontró información del cliente</Text>
+                    <Text style={styles.errorText}>No se encontró información del líder</Text>
                     <TouchableOpacity
                         style={styles.backButton}
                         onPress={() => navigation.goBack()}
@@ -234,24 +398,27 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
     return (
         <SafeAreaView style={styles.container}>
             <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-                {/* Información del cliente */}
+                {/* Información del líder */}
                 <View style={styles.clientInfoContainer}>
-                    <Text style={styles.clientInfoTitle}>Información del Cliente</Text>
+                    <Text style={styles.clientInfoTitle}>Información del Líder</Text>
                     <View style={styles.clientInfo}>
                         <Text style={styles.clientName}>{client.nombre} {client.apellido}</Text>
                         <Text style={styles.clientDetails}>CC: {client.cedula}</Text>
                         <Text style={styles.clientDetails}>📍 {client.direccion}</Text>
                         <Text style={styles.clientDetails}>{client.barrio}, {client.ciudad}</Text>
-                        <Text style={styles.clientDetails}>📞 {client.celular}</Text>
+                        {client.celular && (
+                            <Text style={styles.clientDetails}>📞 {client.celular}</Text>
+                        )}
+                        {client.status === 'visitado' && (
+                            <Text style={styles.clientWarning}>
+                                ⚠️ Este líder ya fue encuestado anteriormente
+                            </Text>
+                        )}
                     </View>
                 </View>
 
-                {/* Estado de ubicación */}
-                <View style={styles.locationContainer}>
-                    <Text style={styles.locationText}>
-                        📍 Ubicación: {currentLocation ? '✅ Obtenida' : '⏳ Obteniendo GPS...'}
-                    </Text>
-                </View>
+                {/* Estado de ubicación mejorado */}
+                {renderLocationStatus()}
 
                 {/* Formulario de encuesta */}
                 <View style={styles.surveyContainer}>
@@ -276,10 +443,10 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
                     <TouchableOpacity
                         style={[
                             styles.submitButton,
-                            (!validateSurvey() || isSubmitting) && styles.submitButtonDisabled
+                            (!validateSurvey() || isSubmitting || !currentLocation) && styles.submitButtonDisabled
                         ]}
                         onPress={handleSubmit}
-                        disabled={!validateSurvey() || isSubmitting}
+                        disabled={!validateSurvey() || isSubmitting || !currentLocation}
                     >
                         <Text style={styles.submitButtonText}>
                             {isSubmitting ? 'Enviando...' : 'Enviar Encuesta'}
@@ -332,17 +499,63 @@ const styles = StyleSheet.create({
         color: '#7f8c8d',
         marginBottom: 4,
     },
+    clientWarning: {
+        fontSize: 14,
+        color: '#f39c12',
+        fontWeight: '600',
+        marginTop: 8,
+        textAlign: 'center',
+        backgroundColor: '#fff3cd',
+        padding: 8,
+        borderRadius: 6,
+    },
     locationContainer: {
-        backgroundColor: '#e8f4f8',
         marginHorizontal: 16,
         marginBottom: 16,
         padding: 12,
         borderRadius: 8,
     },
+    locationLoading: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#e8f4f8',
+    },
+    locationError: {
+        alignItems: 'center',
+        backgroundColor: '#fee',
+    },
+    locationErrorText: {
+        fontSize: 14,
+        color: '#e74c3c',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    retryButton: {
+        backgroundColor: '#3498db',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 6,
+    },
+    retryButtonText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    locationSuccess: {
+        alignItems: 'center',
+        backgroundColor: '#e8f4f8',
+    },
     locationText: {
         fontSize: 14,
         color: '#2c3e50',
         textAlign: 'center',
+    },
+    locationCoords: {
+        fontSize: 12,
+        color: '#7f8c8d',
+        fontFamily: 'monospace',
+        marginTop: 4,
     },
     surveyContainer: {
         backgroundColor: '#fff',
