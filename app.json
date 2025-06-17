@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "SurveysGeo",
-    "slug": "SurveysGeo",
+    "name": "GeminiGeo",
+    "slug": "GeminiGeo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/logoSurveys.png",

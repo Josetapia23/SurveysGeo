@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
     View,
     Text,
@@ -8,14 +8,16 @@ import {
     Alert,
     FlatList,
     Dimensions,
-    ActivityIndicator
+    ActivityIndicator,
+    Linking
 } from 'react-native';
 import MapView, { Marker } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useFocusEffect } from '@react-navigation/native';
 import { RootStackParamList } from '../navigation/types';   
 import { useUser } from '../context/UserContext';
-import { Client } from '../../App';
+import { ApiService, API_CONFIG, LiderResponse } from '../services/api';
 
 // Tipos para navegación
 type MapScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Map'>;
@@ -29,7 +31,7 @@ interface UserLocation {
     longitude: number;
 }
 
-interface ClientWithDistance extends Client {
+interface LiderWithDistance extends LiderResponse {
     distance: number; // en metros
 }
 
@@ -42,79 +44,77 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
     const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
     const [isMapExpanded, setIsMapExpanded] = useState<boolean>(false);
     const [isLoadingLocation, setIsLoadingLocation] = useState<boolean>(true);
-    const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+    const [isLoadingLideres, setIsLoadingLideres] = useState<boolean>(true);
+    const [selectedLider, setSelectedLider] = useState<LiderResponse | null>(null);
+    
+    // 🔥 DATOS REALES DE LA API
+    const [allLideres, setAllLideres] = useState<LiderResponse[]>([]);
+    const [lideresPendientes, setLideresPendientes] = useState<LiderResponse[]>([]);
 
-    // Datos mock de clientes (después vendrán de Firebase)
-    const mockClients: Client[] = [
-        {
-            id: 'client1',
-            cedula: '12345678',
-            nombre: 'Ana María',
-            apellido: 'Rodríguez',
-            direccion: 'Calle 45 #23-67',
-            celular: '3001234567',
-            barrio: 'El Prado',
-            ciudad: 'Barranquilla',
-            coordinates: { latitude: 10.9639, longitude: -74.7964 },
-            assignedTo: user?.id || 'gestor1',
-            status: 'pendiente'
-        },
-        {
-            id: 'client2',
-            cedula: '87654321',
-            nombre: 'Carlos',
-            apellido: 'Mendoza',
-            direccion: 'Carrera 58 #76-45',
-            celular: '3109876543',
-            barrio: 'Recreo',
-            ciudad: 'Barranquilla',
-            coordinates: { latitude: 10.9878, longitude: -74.7889 },
-            assignedTo: user?.id || 'gestor1',
-            status: 'visitado'
-        },
-        {
-            id: 'client3',
-            cedula: '11223344',
-            nombre: 'Lucía',
-            apellido: 'González',
-            direccion: 'Calle 72 #41-23',
-            celular: '3201122334',
-            barrio: 'Riomar',
-            ciudad: 'Barranquilla',
-            coordinates: { latitude: 10.9456, longitude: -74.8123 },
-            assignedTo: user?.id || 'gestor1',
-            status: 'pendiente'
-        },
-        {
-            id: 'client4',
-            cedula: '99887766',
-            nombre: 'Roberto',
-            apellido: 'Silva',
-            direccion: 'Carrera 46 #68-12',
-            celular: '3159988776',
-            barrio: 'Boston',
-            ciudad: 'Barranquilla',
-            coordinates: { latitude: 10.9712, longitude: -74.7845 },
-            assignedTo: user?.id || 'gestor1',
-            status: 'visitado'
-        },
-        {
-            id: 'client5',
-            cedula: '55443322',
-            nombre: 'Patricia',
-            apellido: 'Herrera',
-            direccion: 'Calle 84 #52-18',
-            celular: '3125544332',
-            barrio: 'Alto Prado',
-            ciudad: 'Barranquilla',
-            coordinates: { latitude: 10.9334, longitude: -74.8067 },
-            assignedTo: user?.id || 'gestor1',
-            status: 'pendiente'
+    // Función helper para limpiar datos de líderes
+    const cleanLiderData = (lider: any): LiderResponse => {
+        return {
+            id: Number(lider.id || lider.idlider || 0),
+            cedula: String(lider.cedula || '').trim(),
+            nombres: String(lider.nombres || '').trim(),
+            apellidos: String(lider.apellidos || '').trim(),
+            celular: String(lider.celular || '').trim(),
+            direccion: String(lider.direccion || '').trim(),
+            barrio: String(lider.barrio || '').trim(),
+            municipio_residencia: String(lider.municipio_residencia || '').trim(),
+            municipio_operacion: String(lider.municipio_operacion || '').trim(),
+            status: lider.status === 'visitado' ? 'visitado' : 'pendiente',
+            fecha_encuesta: lider.fecha_encuesta || null,
+            grupo: String(lider.grupo || '').trim(),
+            meta: Number(lider.meta || 0),
+            coordinates: {
+                latitude: Number(lider.coordinates?.latitude || 10.96),
+                longitude: Number(lider.coordinates?.longitude || -74.80)
+            }
+        };
+    };
+
+    // 🔥 CARGAR LÍDERES DESDE LA API
+    const cargarLideres = async (): Promise<void> => {
+        try {
+            setIsLoadingLideres(true);
+            console.log('🗺️ Cargando líderes para el mapa...');
+
+            const response = await ApiService.get<{
+                lideres: any[];
+                statistics: any;
+            }>(API_CONFIG.ENDPOINTS.LIDERES);
+
+            if (response.success && response.data) {
+                const lideresLimpios = response.data.lideres.map(cleanLiderData);
+                setAllLideres(lideresLimpios);
+                
+                // Filtrar solo los pendientes para el mapa
+                const pendientes = lideresLimpios.filter(lider => lider.status === 'pendiente');
+                setLideresPendientes(pendientes);
+                
+                console.log(`✅ Cargados ${lideresLimpios.length} líderes (${pendientes.length} pendientes)`);
+            } else {
+                throw new Error(response.message || 'Error obteniendo líderes');
+            }
+        } catch (error) {
+            console.error('❌ Error cargando líderes:', error);
+            Alert.alert(
+                'Error',
+                'No se pudieron cargar los líderes. Verifica tu conexión.',
+                [{ text: 'OK' }]
+            );
+        } finally {
+            setIsLoadingLideres(false);
         }
-    ];
+    };
 
-    // Filtrar solo clientes pendientes
-    const pendingClients = mockClients.filter(client => client.status === 'pendiente');
+    // Cargar líderes al enfocar la pantalla
+    useFocusEffect(
+        useCallback(() => {
+            cargarLideres();
+        }, [])
+    );
 
     // Calcular distancia entre dos puntos (fórmula de Haversine)
     const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -129,24 +129,24 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
         return R * c;
     };
 
-    // Obtener clientes con distancias ordenados por cercanía
-    const getClientsWithDistance = (): ClientWithDistance[] => {
+    // Obtener líderes con distancias ordenados por cercanía
+    const getLideresWithDistance = (): LiderWithDistance[] => {
         if (!userLocation) return [];
 
-        return pendingClients
-            .map(client => ({
-                ...client,
+        return lideresPendientes
+            .map(lider => ({
+                ...lider,
                 distance: calculateDistance(
                     userLocation.latitude,
                     userLocation.longitude,
-                    client.coordinates.latitude,
-                    client.coordinates.longitude
+                    lider.coordinates.latitude,
+                    lider.coordinates.longitude
                 )
             }))
             .sort((a, b) => a.distance - b.distance);
     };
 
-    const clientsWithDistance = getClientsWithDistance();
+    const lideresWithDistance = getLideresWithDistance();
 
     // Obtener ubicación del usuario
     useEffect(() => {
@@ -156,6 +156,7 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
     const getCurrentLocation = async (): Promise<void> => {
         try {
             setIsLoadingLocation(true);
+            console.log('📍 Obteniendo ubicación del usuario...');
 
             // Solicitar permisos
             const { status } = await Location.requestForegroundPermissionsAsync();
@@ -180,6 +181,7 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
             };
 
             setUserLocation(userLoc);
+            console.log('✅ Ubicación obtenida:', userLoc);
 
             // Centrar el mapa en la ubicación del usuario
             if (mapRef.current) {
@@ -191,52 +193,73 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
             }
 
         } catch (error) {
-            console.error('Error obteniendo ubicación:', error);
-            Alert.alert('Error', 'No se pudo obtener tu ubicación');
+            console.error('❌ Error obteniendo ubicación:', error);
+            Alert.alert(
+                'Error GPS',
+                'No se pudo obtener tu ubicación. Verifica que el GPS esté activado.',
+                [
+                    { text: 'Reintentar', onPress: getCurrentLocation },
+                    { text: 'Continuar' }
+                ]
+            );
         } finally {
             setIsLoadingLocation(false);
         }
     };
 
-    const handleMarkerPress = (client: Client): void => {
-        setSelectedClient(client);
+    const handleMarkerPress = (lider: LiderResponse): void => {
+        setSelectedLider(lider);
+        console.log('📍 Marcador seleccionado:', lider.nombres);
 
-        // Centrar mapa en el cliente seleccionado
+        // Centrar mapa en el líder seleccionado
         if (mapRef.current) {
             mapRef.current.animateToRegion({
-                latitude: client.coordinates.latitude,
-                longitude: client.coordinates.longitude,
+                latitude: lider.coordinates.latitude,
+                longitude: lider.coordinates.longitude,
                 latitudeDelta: 0.01,
                 longitudeDelta: 0.01,
             }, 500);
         }
     };
 
-    const handleClientSelect = (client: ClientWithDistance): void => {
-        setSelectedClient(client);
+    const handleLiderSelect = (lider: LiderWithDistance): void => {
+        setSelectedLider(lider);
 
-        // Centrar mapa en el cliente
+        // Centrar mapa en el líder
         if (mapRef.current) {
             mapRef.current.animateToRegion({
-                latitude: client.coordinates.latitude,
-                longitude: client.coordinates.longitude,
+                latitude: lider.coordinates.latitude,
+                longitude: lider.coordinates.longitude,
                 latitudeDelta: 0.01,
                 longitudeDelta: 0.01,
             }, 500);
         }
     };
 
-    const handleNavigateToClient = (client: Client): void => {
+    const handleNavigateToLider = (lider: LiderResponse): void => {
+        const { latitude, longitude } = lider.coordinates;
+        
         Alert.alert(
-            'Navegar al Cliente',
-            `¿Deseas abrir la navegación hacia ${client.nombre} ${client.apellido}?`,
+            'Navegar al Líder',
+            `¿Deseas abrir la navegación hacia ${lider.nombres}?`,
             [
                 { text: 'Cancelar', style: 'cancel' },
                 {
-                    text: 'Navegar',
+                    text: 'Google Maps',
                     onPress: () => {
-                        // TODO: Abrir Google Maps con navegación
-                        Alert.alert('Navegación', 'Próximamente se abrirá Google Maps');
+                        const url = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+                        Linking.openURL(url).catch(() => {
+                            Alert.alert('Error', 'No se pudo abrir Google Maps');
+                        });
+                    }
+                },
+                {
+                    text: 'Waze',
+                    onPress: () => {
+                        const url = `https://waze.com/ul?ll=${latitude},${longitude}&navigate=yes`;
+                        Linking.openURL(url).catch(() => {
+                            Alert.alert('Error', 'No se pudo abrir Waze');
+                        });
                     }
                 }
             ]
@@ -255,27 +278,42 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
         setIsMapExpanded(!isMapExpanded);
     };
 
-    const renderClientItem = ({ item }: { item: ClientWithDistance }) => (
+    const renderLiderItem = ({ item }: { item: LiderWithDistance }) => (
         <TouchableOpacity
             style={[
                 styles.clientItem,
-                selectedClient?.id === item.id && styles.clientItemSelected
+                selectedLider?.id === item.id && styles.clientItemSelected
             ]}
-            onPress={() => handleClientSelect(item)}
+            onPress={() => handleLiderSelect(item)}
         >
             <View style={styles.clientItemContent}>
                 <View style={styles.clientItemInfo}>
-                    <Text style={styles.clientName}>{item.nombre} {item.apellido}</Text>
+                    <Text style={styles.clientName}>
+                        {item.nombres} {item.apellidos}
+                    </Text>
                     <Text style={styles.clientAddress}>{item.direccion}</Text>
                     <Text style={styles.clientBarrio}>{item.barrio}</Text>
+                    <Text style={styles.clientCedula}>CC: {item.cedula}</Text>
                 </View>
                 <View style={styles.clientItemActions}>
                     <Text style={styles.distanceText}>{formatDistance(item.distance)}</Text>
                     <TouchableOpacity
                         style={styles.surveyButton}
                         onPress={() => navigation.navigate('Survey', {
-                            clientId: item.id,
-                            client: item
+                            clientId: item.id.toString(),
+                            client: {
+                                id: item.id.toString(),
+                                cedula: item.cedula,
+                                nombre: item.nombres,
+                                apellido: item.apellidos,
+                                direccion: item.direccion,
+                                celular: item.celular,
+                                barrio: item.barrio,
+                                ciudad: 'Barranquilla',
+                                coordinates: item.coordinates,
+                                assignedTo: user?.id || '',
+                                status: item.status
+                            }
                         })}
                     >
                         <Text style={styles.surveyButtonText}>Encuestar</Text>
@@ -292,10 +330,12 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
                 styles.mapContainer,
                 isMapExpanded ? styles.mapContainerExpanded : styles.mapContainerNormal
             ]}>
-                {isLoadingLocation && (
+                {(isLoadingLocation || isLoadingLideres) && (
                     <View style={styles.loadingOverlay}>
                         <ActivityIndicator size="large" color="#3498db" />
-                        <Text style={styles.loadingText}>Obteniendo ubicación...</Text>
+                        <Text style={styles.loadingText}>
+                            {isLoadingLocation ? 'Obteniendo ubicación...' : 'Cargando líderes...'}
+                        </Text>
                     </View>
                 )}
 
@@ -311,17 +351,18 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
                         longitudeDelta: 0.05,
                     }}
                 >
-                    {/* Marcadores de clientes pendientes */}
-                    {pendingClients.map((client) => (
+                    {/* 🔥 MARCADORES DE LÍDERES REALES */}
+                    {lideresPendientes.map((lider) => (
                         <Marker
-                            key={client.id}
-                            coordinate={client.coordinates}
-                            onPress={() => handleMarkerPress(client)}
-                            pinColor={selectedClient?.id === client.id ? '#27ae60' : '#e74c3c'}
+                            key={lider.id}
+                            coordinate={lider.coordinates}
+                            onPress={() => handleMarkerPress(lider)}
+                            title={lider.nombres}
+                            description={`${lider.direccion} - ${lider.barrio}`}
                         >
                             <View style={[
                                 styles.customMarker,
-                                selectedClient?.id === client.id && styles.customMarkerSelected
+                                selectedLider?.id === lider.id && styles.customMarkerSelected
                             ]}>
                                 <Text style={styles.markerText}>📍</Text>
                             </View>
@@ -348,45 +389,73 @@ const MapScreen: React.FC<MapScreenProps> = ({ navigation }) => {
                 </TouchableOpacity>
             </View>
 
-            {/* Lista de clientes por cercanía */}
+            {/* Lista de líderes por cercanía */}
             {!isMapExpanded && (
                 <View style={styles.clientsContainer}>
                     <Text style={styles.clientsTitle}>
-                        Clientes Pendientes ({pendingClients.length})
+                        Líderes Pendientes ({lideresPendientes.length})
                     </Text>
                     <Text style={styles.clientsSubtitle}>Ordenados por distancia</Text>
 
-                    <FlatList
-                        data={clientsWithDistance}
-                        renderItem={renderClientItem}
-                        keyExtractor={(item) => item.id}
-                        showsVerticalScrollIndicator={false}
-                        contentContainerStyle={styles.clientsList}
-                    />
+                    {lideresWithDistance.length > 0 ? (
+                        <FlatList
+                            data={lideresWithDistance}
+                            renderItem={renderLiderItem}
+                            keyExtractor={(item) => item.id.toString()}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.clientsList}
+                        />
+                    ) : (
+                        <View style={styles.emptyState}>
+                            <Text style={styles.emptyStateText}>
+                                {isLoadingLideres 
+                                    ? 'Cargando líderes...' 
+                                    : userLocation 
+                                        ? 'No hay líderes pendientes'
+                                        : 'Obteniendo ubicación para calcular distancias...'
+                                }
+                            </Text>
+                        </View>
+                    )}
                 </View>
             )}
 
-            {/* Información del cliente seleccionado */}
-            {selectedClient && (
+            {/* Información del líder seleccionado */}
+            {selectedLider && (
                 <View style={styles.selectedClientInfo}>
                     <Text style={styles.selectedClientName}>
-                        {selectedClient.nombre} {selectedClient.apellido}
+                        {selectedLider.nombres} {selectedLider.apellidos}
                     </Text>
                     <Text style={styles.selectedClientAddress}>
-                        📍 {selectedClient.direccion}
+                        📍 {selectedLider.direccion}
+                    </Text>
+                    <Text style={styles.selectedClientBarrio}>
+                        {selectedLider.barrio}, Barranquilla
                     </Text>
                     <View style={styles.selectedClientActions}>
                         <TouchableOpacity
                             style={styles.actionButton}
-                            onPress={() => handleNavigateToClient(selectedClient)}
+                            onPress={() => handleNavigateToLider(selectedLider)}
                         >
                             <Text style={styles.actionButtonText}>Navegar</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.actionButton, styles.actionButtonPrimary]}
                             onPress={() => navigation.navigate('Survey', {
-                                clientId: selectedClient.id,
-                                client: selectedClient
+                                clientId: selectedLider.id.toString(),
+                                client: {
+                                    id: selectedLider.id.toString(),
+                                    cedula: selectedLider.cedula,
+                                    nombre: selectedLider.nombres,
+                                    apellido: selectedLider.apellidos,
+                                    direccion: selectedLider.direccion,
+                                    celular: selectedLider.celular,
+                                    barrio: selectedLider.barrio,
+                                    ciudad: 'Barranquilla',
+                                    coordinates: selectedLider.coordinates,
+                                    assignedTo: user?.id || '',
+                                    status: selectedLider.status
+                                }
                             })}
                         >
                             <Text style={[styles.actionButtonText, styles.actionButtonTextPrimary]}>
@@ -434,21 +503,27 @@ const styles = StyleSheet.create({
         color: '#3498db',
     },
     customMarker: {
-        width: 30,
-        height: 30,
+        width: 35,
+        height: 35,
         justifyContent: 'center',
         alignItems: 'center',
         backgroundColor: '#fff',
-        borderRadius: 15,
-        borderWidth: 2,
+        borderRadius: 17.5,
+        borderWidth: 3,
         borderColor: '#e74c3c',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+        elevation: 5,
     },
     customMarkerSelected: {
         borderColor: '#27ae60',
         backgroundColor: '#e8f5e8',
+        transform: [{ scale: 1.1 }],
     },
     markerText: {
-        fontSize: 12,
+        fontSize: 14,
     },
     expandButton: {
         position: 'absolute',
@@ -510,7 +585,7 @@ const styles = StyleSheet.create({
     },
     clientItem: {
         backgroundColor: '#fff',
-        borderRadius: 8,
+        borderRadius: 12,
         padding: 12,
         marginBottom: 8,
         shadowColor: '#000',
@@ -545,6 +620,11 @@ const styles = StyleSheet.create({
     clientBarrio: {
         fontSize: 12,
         color: '#95a5a6',
+        marginBottom: 2,
+    },
+    clientCedula: {
+        fontSize: 11,
+        color: '#bdc3c7',
     },
     clientItemActions: {
         alignItems: 'flex-end',
@@ -566,6 +646,17 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '600',
     },
+    emptyState: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 40,
+    },
+    emptyStateText: {
+        fontSize: 16,
+        color: '#7f8c8d',
+        textAlign: 'center',
+    },
     selectedClientInfo: {
         backgroundColor: '#fff',
         padding: 16,
@@ -581,6 +672,11 @@ const styles = StyleSheet.create({
     selectedClientAddress: {
         fontSize: 14,
         color: '#7f8c8d',
+        marginBottom: 4,
+    },
+    selectedClientBarrio: {
+        fontSize: 12,
+        color: '#95a5a6',
         marginBottom: 12,
     },
     selectedClientActions: {
