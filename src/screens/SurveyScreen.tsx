@@ -15,6 +15,7 @@ import * as Location from 'expo-location';
 import { RootStackParamList } from '../navigation/types';
 import { useUser } from '../context/UserContext';
 import { ApiService, API_CONFIG } from '../services/api';
+import ProximityStatus from '../components/ProximityStatus'; // 🔥 NUEVO IMPORT
 
 // Tipos para navegación
 type SurveyScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Survey'>;
@@ -60,7 +61,11 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
     const [locationError, setLocationError] = useState<string | null>(null);
     const [isLoadingLocation, setIsLoadingLocation] = useState<boolean>(true);
 
-    // 🔥 OBTENER UBICACIÓN REAL DEL DISPOSITIVO
+    // 🔥 NUEVO ESTADO PARA PROXIMIDAD
+    const [isProximityValid, setIsProximityValid] = useState<boolean>(false);
+    const [currentDistance, setCurrentDistance] = useState<number | null>(null);
+
+    // Obtener ubicación GPS independiente (para envío de encuesta)
     useEffect(() => {
         getCurrentLocation();
     }, []);
@@ -70,30 +75,17 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
             setIsLoadingLocation(true);
             setLocationError(null);
 
-            console.log('📍 Solicitando permisos de ubicación...');
+            console.log('📍 Obteniendo ubicación para encuesta...');
 
-            // Solicitar permisos de ubicación
             const { status } = await Location.requestForegroundPermissionsAsync();
-
             if (status !== 'granted') {
                 setLocationError('Permisos de ubicación denegados');
-                Alert.alert(
-                    'Permisos Requeridos',
-                    'Esta app necesita acceso a la ubicación para registrar el lugar de la encuesta.',
-                    [
-                        { text: 'Configuración', onPress: () => Location.requestForegroundPermissionsAsync() },
-                        { text: 'Cancelar' }
-                    ]
-                );
                 return;
             }
 
-            console.log('📍 Obteniendo ubicación GPS...');
-
-            // Obtener ubicación actual
             const location = await Location.getCurrentPositionAsync({
                 accuracy: Location.Accuracy.High,
-
+                timeout: 15000,
             });
 
             const coords = {
@@ -103,25 +95,21 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
 
             setCurrentLocation(coords);
             setLocationError(null);
-
-            console.log('✅ Ubicación obtenida:', coords);
-            console.log(`📍 Precisión: ${location.coords.accuracy}m`);
+            console.log('✅ Ubicación para encuesta obtenida:', coords);
 
         } catch (error) {
             console.error('❌ Error obteniendo ubicación:', error);
             setLocationError('Error obteniendo ubicación GPS');
-
-            Alert.alert(
-                'Error GPS',
-                'No se pudo obtener la ubicación. Verifica que el GPS esté activado y tengas conexión.',
-                [
-                    { text: 'Reintentar', onPress: getCurrentLocation },
-                    { text: 'Cancelar' }
-                ]
-            );
         } finally {
             setIsLoadingLocation(false);
         }
+    };
+
+    // 🔥 NUEVA FUNCIÓN - Callback de proximidad
+    const handleProximityChange = (isInRange: boolean, distance: number | null): void => {
+        console.log(`🎯 Proximidad cambió: ${isInRange ? 'EN RANGO' : 'FUERA DE RANGO'} (${distance}m)`);
+        setIsProximityValid(isInRange);
+        setCurrentDistance(distance);
     };
 
     // Preguntas de la encuesta
@@ -156,11 +144,34 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
             surveyData.pregunta3 !== null;
     };
 
+    // 🔥 VALIDACIÓN MEJORADA - Incluye proximidad
+    const canSubmitSurvey = (): boolean => {
+        return validateSurvey() &&
+            isProximityValid &&
+            currentLocation !== null &&
+            !isSubmitting;
+    };
+
     const handleSubmit = async (): Promise<void> => {
+        // Validación de formulario
         if (!validateSurvey()) {
             Alert.alert(
                 'Encuesta Incompleta',
                 'Por favor responda todas las preguntas antes de continuar.',
+                [{ text: 'OK' }]
+            );
+            return;
+        }
+
+        // 🔥 NUEVA VALIDACIÓN DE PROXIMIDAD
+        if (!isProximityValid) {
+            const distanceMessage = currentDistance
+                ? `Estás a ${currentDistance}m del líder. Necesitas estar a 80m o menos.`
+                : 'No estás lo suficientemente cerca del líder.';
+
+            Alert.alert(
+                'Fuera de Rango',
+                `${distanceMessage}\n\nAcércate más al líder para poder realizar la encuesta.`,
                 [{ text: 'OK' }]
             );
             return;
@@ -205,6 +216,7 @@ const SurveyScreen: React.FC<SurveyScreenProps> = ({ navigation, route }) => {
             `¿Está seguro de enviar la encuesta para ${client?.nombre} ${client?.apellido}?
 
 📍 Ubicación: ${currentLocation?.latitude.toFixed(6)}, ${currentLocation?.longitude.toFixed(6)}
+🎯 Distancia al líder: ${currentDistance}m (✅ En rango)
 📅 Fecha: ${new Date().toLocaleString()}
 
 Respuestas:
@@ -222,7 +234,7 @@ Respuestas:
         );
     };
 
-    // 🔥 ENVIAR ENCUESTA A LA API REAL
+    // Enviar encuesta a la API real
     const submitSurvey = async (): Promise<void> => {
         setIsSubmitting(true);
 
@@ -233,10 +245,8 @@ Respuestas:
 
             console.log('📤 Enviando encuesta a la API...');
 
-            // Formato de ubicación que espera la API: "lat,lng"
             const ubicacion = `${currentLocation.latitude},${currentLocation.longitude}`;
 
-            // Convertir respuestas al formato que espera la API
             const encuestaData: EncuestaApiData = {
                 id_lider: parseInt(client.id),
                 pregunta1: surveyData.pregunta1 === 'si' ? 'S' : 'N',
@@ -247,7 +257,6 @@ Respuestas:
 
             console.log('📋 Datos de encuesta a enviar:', encuestaData);
 
-            // 🚀 ENVIAR A LA API REAL
             const response = await ApiService.post(
                 API_CONFIG.ENDPOINTS.ENCUESTAS,
                 encuestaData
@@ -260,14 +269,13 @@ Respuestas:
                     '✅ Encuesta Enviada',
                     `La encuesta para ${client.nombre} ${client.apellido} ha sido guardada exitosamente.
 
-📍 Ubicación registrada
+📍 Ubicación registrada (${currentDistance}m del líder)
 📅 Fecha: ${new Date().toLocaleString()}
-🆔 ID Encuesta: ${response.data?.encuesta_id || 'N/A'}`,
+🆔 ID Encuesta: ${response.data?.id_encuesta || 'N/A'}`,
                     [
                         {
                             text: 'Ver Lista',
                             onPress: () => {
-                                // Navegar de vuelta a la lista de líderes
                                 navigation.navigate('ClientList');
                             }
                         },
@@ -305,39 +313,6 @@ Respuestas:
         }
     };
 
-    // Renderizar estado de ubicación mejorado
-    const renderLocationStatus = () => (
-        <View style={styles.locationContainer}>
-            {isLoadingLocation ? (
-                <View style={styles.locationLoading}>
-                    <ActivityIndicator size="small" color="#3498db" />
-                    <Text style={styles.locationText}>⏳ Obteniendo ubicación GPS...</Text>
-                </View>
-            ) : locationError ? (
-                <View style={styles.locationError}>
-                    <Text style={styles.locationErrorText}>❌ {locationError}</Text>
-                    <TouchableOpacity
-                        style={styles.retryButton}
-                        onPress={getCurrentLocation}
-                    >
-                        <Text style={styles.retryButtonText}>Reintentar</Text>
-                    </TouchableOpacity>
-                </View>
-            ) : currentLocation ? (
-                <View style={styles.locationSuccess}>
-                    <Text style={styles.locationText}>
-                        ✅ Ubicación obtenida
-                    </Text>
-                    <Text style={styles.locationCoords}>
-                        📍 {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
-                    </Text>
-                </View>
-            ) : (
-                <Text style={styles.locationText}>📍 Ubicación no disponible</Text>
-            )}
-        </View>
-    );
-
     const renderQuestion = (question: typeof questions[0], questionKey: keyof SurveyData) => (
         <View key={question.id} style={styles.questionContainer}>
             <Text style={styles.questionText}>{question.text}</Text>
@@ -347,14 +322,16 @@ Respuestas:
                 <TouchableOpacity
                     style={[
                         styles.answerButton,
-                        surveyData[questionKey] === 'si' && styles.answerButtonSelected
+                        surveyData[questionKey] === 'si' && styles.answerButtonSelected,
+                        !isProximityValid && styles.answerButtonDisabled // 🔥 DESHABILITADO SI ESTÁ LEJOS
                     ]}
                     onPress={() => handleAnswer(questionKey, 'si')}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !isProximityValid} // 🔥 NUEVA VALIDACIÓN
                 >
                     <Text style={[
                         styles.answerText,
-                        surveyData[questionKey] === 'si' && styles.answerTextSelected
+                        surveyData[questionKey] === 'si' && styles.answerTextSelected,
+                        !isProximityValid && styles.answerTextDisabled // 🔥 TEXTO DESHABILITADO
                     ]}>
                         ✓ SÍ
                     </Text>
@@ -363,14 +340,16 @@ Respuestas:
                 <TouchableOpacity
                     style={[
                         styles.answerButton,
-                        surveyData[questionKey] === 'no' && styles.answerButtonSelected
+                        surveyData[questionKey] === 'no' && styles.answerButtonSelected,
+                        !isProximityValid && styles.answerButtonDisabled // 🔥 DESHABILITADO SI ESTÁ LEJOS
                     ]}
                     onPress={() => handleAnswer(questionKey, 'no')}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || !isProximityValid} // 🔥 NUEVA VALIDACIÓN
                 >
                     <Text style={[
                         styles.answerText,
-                        surveyData[questionKey] === 'no' && styles.answerTextSelected
+                        surveyData[questionKey] === 'no' && styles.answerTextSelected,
+                        !isProximityValid && styles.answerTextDisabled // 🔥 TEXTO DESHABILITADO
                     ]}>
                         ✗ NO
                     </Text>
@@ -378,6 +357,18 @@ Respuestas:
             </View>
         </View>
     );
+
+    // 🔥 FUNCIÓN PARA MENSAJE DEL BOTÓN
+    const getSubmitButtonText = (): string => {
+        if (isSubmitting) return 'Enviando...';
+        if (!isProximityValid && currentDistance) {
+            const distanceNeeded = Math.max(0, currentDistance - 80);
+            return `Acércate ${distanceNeeded}m más`;
+        }
+        if (!isProximityValid) return 'Acércate al líder';
+        if (!validateSurvey()) return 'Completa todas las preguntas';
+        return 'Enviar Encuesta';
+    };
 
     if (!client) {
         return (
@@ -398,6 +389,14 @@ Respuestas:
     return (
         <SafeAreaView style={styles.container}>
             <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+                {/* 🔥 NUEVO COMPONENTE DE PROXIMIDAD */}
+                <ProximityStatus
+                    targetLocation={client.coordinates}
+                    minDistance={80}
+                    onProximityChange={handleProximityChange}
+                    style={styles.proximityStatus}
+                />
+
                 {/* Información del líder */}
                 <View style={styles.clientInfoContainer}>
                     <Text style={styles.clientInfoTitle}>Información del Líder</Text>
@@ -417,13 +416,15 @@ Respuestas:
                     </View>
                 </View>
 
-                {/* Estado de ubicación mejorado */}
-                {renderLocationStatus()}
-
                 {/* Formulario de encuesta */}
                 <View style={styles.surveyContainer}>
                     <Text style={styles.surveyTitle}>Encuesta Electoral</Text>
-                    <Text style={styles.surveySubtitle}>Por favor responda todas las preguntas</Text>
+                    <Text style={styles.surveySubtitle}>
+                        {isProximityValid
+                            ? 'Por favor responda todas las preguntas'
+                            : '⚠️ Acércate al líder para habilitar la encuesta'
+                        }
+                    </Text>
 
                     {questions.map((question, index) =>
                         renderQuestion(question, `pregunta${index + 1}` as keyof SurveyData)
@@ -443,13 +444,13 @@ Respuestas:
                     <TouchableOpacity
                         style={[
                             styles.submitButton,
-                            (!validateSurvey() || isSubmitting || !currentLocation) && styles.submitButtonDisabled
+                            !canSubmitSurvey() && styles.submitButtonDisabled // 🔥 NUEVA VALIDACIÓN
                         ]}
                         onPress={handleSubmit}
-                        disabled={!validateSurvey() || isSubmitting || !currentLocation}
+                        disabled={!canSubmitSurvey()} // 🔥 NUEVA VALIDACIÓN
                     >
                         <Text style={styles.submitButtonText}>
-                            {isSubmitting ? 'Enviando...' : 'Enviar Encuesta'}
+                            {getSubmitButtonText()} {/* 🔥 TEXTO DINÁMICO */}
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -465,6 +466,11 @@ const styles = StyleSheet.create({
     },
     scrollContainer: {
         flex: 1,
+    },
+    // 🔥 NUEVO ESTILO
+    proximityStatus: {
+        marginTop: 0,
+        marginBottom: 0,
     },
     clientInfoContainer: {
         backgroundColor: '#fff',
@@ -508,54 +514,6 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff3cd',
         padding: 8,
         borderRadius: 6,
-    },
-    locationContainer: {
-        marginHorizontal: 16,
-        marginBottom: 16,
-        padding: 12,
-        borderRadius: 8,
-    },
-    locationLoading: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: '#e8f4f8',
-    },
-    locationError: {
-        alignItems: 'center',
-        backgroundColor: '#fee',
-    },
-    locationErrorText: {
-        fontSize: 14,
-        color: '#e74c3c',
-        textAlign: 'center',
-        marginBottom: 8,
-    },
-    retryButton: {
-        backgroundColor: '#3498db',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 6,
-    },
-    retryButtonText: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    locationSuccess: {
-        alignItems: 'center',
-        backgroundColor: '#e8f4f8',
-    },
-    locationText: {
-        fontSize: 14,
-        color: '#2c3e50',
-        textAlign: 'center',
-    },
-    locationCoords: {
-        fontSize: 12,
-        color: '#7f8c8d',
-        fontFamily: 'monospace',
-        marginTop: 4,
     },
     surveyContainer: {
         backgroundColor: '#fff',
@@ -612,6 +570,11 @@ const styles = StyleSheet.create({
         borderColor: '#3498db',
         backgroundColor: '#e8f4f8',
     },
+    // 🔥 NUEVOS ESTILOS PARA DESHABILITADO
+    answerButtonDisabled: {
+        borderColor: '#ecf0f1',
+        backgroundColor: '#f8f9fa',
+    },
     answerText: {
         fontSize: 16,
         fontWeight: '600',
@@ -619,6 +582,10 @@ const styles = StyleSheet.create({
     },
     answerTextSelected: {
         color: '#3498db',
+    },
+    // 🔥 NUEVO ESTILO
+    answerTextDisabled: {
+        color: '#bdc3c7',
     },
     actionsContainer: {
         flexDirection: 'row',

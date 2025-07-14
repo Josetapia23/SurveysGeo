@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Configuración de la API
 export const API_CONFIG = {
-    BASE_URL: 'http://192.168.2.193/surveys-api', // IP de tu Mac para dispositivo móvil
+    BASE_URL: 'http://192.168.4.75/surveys-api', // IP de tu Mac para dispositivo móvil
     ENDPOINTS: {
         LOGIN: '/auth/login',
         LIDERES: '/v1/lideres/',
